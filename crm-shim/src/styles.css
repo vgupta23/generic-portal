@@ -1,0 +1,37 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, sans-serif; color: #1e293b; background: #f1f5f9; }
+.center { display: grid; place-items: center; height: 100vh; }
+.shell { display: flex; flex-direction: column; height: 100vh; }
+.topnav { display: flex; align-items: center; gap: 1rem; padding: 0 1.25rem; height: 56px; background: #0f172a; color: #fff; }
+.brand { font-weight: 700; font-size: 1.1rem; }
+.spacer { flex: 1; }
+.duns-picker { display: flex; align-items: center; gap: .5rem; font-size: .85rem; }
+.duns-picker select { padding: .35rem .6rem; border-radius: 6px; border: 0; font-size: .95rem; }
+.user { font-size: .9rem; opacity: .85; }
+.topnav button { padding: .4rem .8rem; border-radius: 6px; border: 1px solid #475569; background: transparent; color: #fff; cursor: pointer; }
+.body { display: flex; flex: 1; min-height: 0; }
+.leftnav { width: 220px; background: #fff; border-right: 1px solid #e2e8f0; padding: .75rem; display: flex; flex-direction: column; gap: .25rem; }
+.leftnav button { text-align: left; padding: .65rem .75rem; border: 0; border-radius: 8px; background: transparent; cursor: pointer; font-size: .95rem; }
+.leftnav button:hover { background: #f1f5f9; }
+.leftnav button.active { background: #e0e7ff; color: #3730a3; font-weight: 600; }
+.content { flex: 1; padding: 1.5rem 2rem; overflow: auto; }
+.muted { color: #64748b; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; margin-top: 1.25rem; }
+.tile { background: #fff; border-radius: 10px; border-top: 4px solid; padding: 1.1rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.tile-icon { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; font-size: 1.4rem; }
+.tile h3 { margin: .8rem 0 .2rem; }
+.tile p { margin: 0 0 .8rem; color: #64748b; font-size: .9rem; }
+.role-tag { font-size: .72rem; background: #f1f5f9; padding: .15rem .5rem; border-radius: 999px; }
+pre { background: #fff; padding: 1rem; border-radius: 8px; overflow: auto; font-size: .8rem; }
+.notice { max-width: 520px; margin: 18vh auto; text-align: center; background: #fff; padding: 2rem; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+.notice a { color: #3730a3; }
+.topnav a.link, .topnav button.link { color: #cbd5e1; font-size: .9rem; text-decoration: none; }
+.pick { max-width: 860px; margin: 0 auto; padding: 2rem 1.5rem; }
+.duns-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1.25rem; margin-top: 1.5rem; }
+.duns-tile { text-align: left; background: #fff; border: 0; border-top: 4px solid #2563eb; border-radius: 12px; padding: 1.4rem; box-shadow: 0 1px 3px rgba(0,0,0,.1); cursor: pointer; font: inherit; }
+.duns-tile:hover:not(:disabled) { box-shadow: 0 4px 14px rgba(0,0,0,.15); }
+.duns-tile:disabled { opacity: .5; cursor: not-allowed; border-top-color: #94a3b8; }
+.duns-tile .num { font-size: 1.5rem; font-weight: 700; letter-spacing: .04em; }
+.duns-tile .co { color: #64748b; margin: .2rem 0 .8rem; }
+.role-tag { font-size: .72rem; background: #f1f5f9; padding: .15rem .5rem; border-radius: 999px; margin-right: 4px; }
+.err { color: #b91c1c; margin-top: 1rem; }
