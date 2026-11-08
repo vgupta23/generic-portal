@@ -1,0 +1,1253 @@
+{
+  "info": {
+    "name": "Retail API (toys & flowers)",
+    "description": "Run with the Collection Runner (top to bottom). Prerequisites: Keycloak running and configured, ./scripts/setup-keycloak-api-test.sh executed, retail-api container running on http://localhost:8090.\n\nThe first folder fetches real tokens from Keycloak; the rest call the API with them.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8090"
+    },
+    {
+      "key": "keycloakUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "realm",
+      "value": "demo"
+    },
+    {
+      "key": "clientId",
+      "value": "retail-api-test"
+    },
+    {
+      "key": "password",
+      "value": "password"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Get tokens from Keycloak",
+      "item": [
+        {
+          "name": "Get tokens - apiuser",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "username",
+                  "value": "apiuser"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+              "host": [
+                "{{keycloakUrl}}"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            },
+            "description": "Password grant against Keycloak (dev-only client retail-api-test). Stores the access and ID token for this user as collection variables."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Keycloak returned tokens for apiuser', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_apiuser', body.access_token);",
+                  "  pm.collectionVariables.set('id_apiuser', body.id_token);",
+                  "});",
+                  "pm.test('Access token carries duns_roles and the retail-ui audience', function () {",
+                  "  const claims = JSON.parse(atob(pm.response.json().access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "  pm.expect(claims.duns_roles).to.be.an('array').that.is.not.empty;",
+                  "  pm.expect(claims.aud).to.include('retail-ui');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get tokens - toyonly",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "username",
+                  "value": "toyonly"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+              "host": [
+                "{{keycloakUrl}}"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            },
+            "description": "Password grant against Keycloak (dev-only client retail-api-test). Stores the access and ID token for this user as collection variables."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Keycloak returned tokens for toyonly', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_toyonly', body.access_token);",
+                  "  pm.collectionVariables.set('id_toyonly', body.id_token);",
+                  "});",
+                  "pm.test('Access token carries duns_roles and the retail-ui audience', function () {",
+                  "  const claims = JSON.parse(atob(pm.response.json().access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "  pm.expect(claims.duns_roles).to.be.an('array').that.is.not.empty;",
+                  "  pm.expect(claims.aud).to.include('retail-ui');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get tokens - noretail",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "username",
+                  "value": "noretail"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+              "host": [
+                "{{keycloakUrl}}"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            },
+            "description": "Password grant against Keycloak (dev-only client retail-api-test). Stores the access and ID token for this user as collection variables."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Keycloak returned tokens for noretail', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_noretail', body.access_token);",
+                  "  pm.collectionVariables.set('id_noretail', body.id_token);",
+                  "});",
+                  "pm.test('Access token carries duns_roles and the retail-ui audience', function () {",
+                  "  const claims = JSON.parse(atob(pm.response.json().access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "  pm.expect(claims.duns_roles).to.be.an('array').that.is.not.empty;",
+                  "  pm.expect(claims.aud).to.include('retail-ui');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Health (public)",
+      "item": [
+        {
+          "name": "GET /actuator/health",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 and UP', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('UP');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Toys (apiuser: RETAILUI on both DUNS)",
+      "item": [
+        {
+          "name": "GET /api/toys",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/toys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "toys"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 with the Toy Shop catalog', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.duns).to.eql('111111111');",
+                  "  pm.expect(b.company).to.eql('Toy Shop');",
+                  "  pm.expect(b.count).to.eql(6);",
+                  "  pm.expect(b.items).to.have.lengthOf(6);",
+                  "  pm.expect(b.items[0]).to.have.all.keys('id','name','category','price','stock');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/toys/t1",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/toys/t1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "toys",
+                "t1"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 Teddy Bear', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().name).to.eql('Teddy Bear');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/toys/does-not-exist",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/toys/does-not-exist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "toys",
+                "does-not-exist"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 not_found', function () {",
+                  "  pm.response.to.have.status(404);",
+                  "  pm.expect(pm.response.json().error).to.eql('not_found');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Flowers (apiuser: RETAILUI on both DUNS)",
+      "item": [
+        {
+          "name": "GET /api/flowers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/flowers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "flowers"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 with the Flower Shop catalog', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.duns).to.eql('222222222');",
+                  "  pm.expect(b.company).to.eql('Flower Shop');",
+                  "  pm.expect(b.count).to.eql(6);",
+                  "  pm.expect(b.items[0]).to.have.all.keys('id','name','color','price','stock');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/flowers/f1",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/flowers/f1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "flowers",
+                "f1"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 Red Roses', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().name).to.eql('Red Roses (dozen)');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/flowers/does-not-exist",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/flowers/does-not-exist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "flowers",
+                "does-not-exist"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 not_found', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Identity echo",
+      "item": [
+        {
+          "name": "GET /api/me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Custom claims are read from the verified tokens', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.username).to.eql('apiuser');",
+                  "  pm.expect(b.department).to.eql('QA');",
+                  "  pm.expect(b.dunsRoles['111111111']).to.include('RETAILUI');",
+                  "  pm.expect(b.dunsRoles['222222222']).to.include('RETAILUI');",
+                  "  pm.expect(b.accessTokenAudience).to.include('retail-ui');",
+                  "  pm.expect(b.idTokenAudience).to.include('retail-api-test');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Access denied - missing or invalid token (401)",
+      "item": [
+        {
+          "name": "Toys without any token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/toys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "toys"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(401);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Flowers without any token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/flowers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "flowers"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(401);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Garbage bearer token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer not-a-jwt"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/toys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "toys"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(401);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Access token with tampered signature",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/toys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "toys"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const parts = pm.collectionVariables.get('access_apiuser').split('.');",
+                  "const sig = parts[2];",
+                  "const mid = Math.floor(sig.length / 2);",
+                  "parts[2] = sig.slice(0, mid) + (sig[mid] === 'A' ? 'B' : 'A') + sig.slice(mid + 1);  // still valid base64, wrong signature",
+                  "pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + parts.join('.') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(401);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(b.message).to.include('Invalid signature');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Access token only (ID token missing)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/toys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "toys"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(401);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(b.message).to.include('ID token missing');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Garbage ID token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "not-a-jwt"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/toys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "toys"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(401);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(b.message).to.include('invalid ID token');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ID token of a different user",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_noretail}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/toys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "toys"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(401);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(b.message).to.include('same user');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ID token used as access token (wrong audience)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{id_apiuser}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/toys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "toys"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(401);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Access denied - RETAILUI role missing (403)",
+      "item": [
+        {
+          "name": "noretail: toys",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_noretail}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_noretail}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/toys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "toys"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(b.message).to.include('RETAILUI');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "noretail: flowers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_noretail}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_noretail}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/flowers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "flowers"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(b.message).to.include('RETAILUI');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "noretail: /api/me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_noretail}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_noretail}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "toyonly: toys (RETAILUI on 111111111) is allowed",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_toyonly}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_toyonly}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/toys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "toys"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "toyonly: flowers (no RETAILUI on 222222222)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_toyonly}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_toyonly}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/flowers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "flowers"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(b.message).to.include('DUNS 222222222');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

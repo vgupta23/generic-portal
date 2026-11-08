@@ -1,0 +1,21 @@
+$kind: http-request
+name: GET /api/flowers
+url: "{{baseUrl}}/api/flowers"
+method: GET
+headers:
+  Authorization: Bearer {{access_apiuser}}
+  X-ID-Token: "{{id_apiuser}}"
+  Accept: application/json
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('200 with the Flower Shop catalog', function () {
+        pm.response.to.have.status(200);
+        const b = pm.response.json();
+        pm.expect(b.duns).to.eql('222222222');
+        pm.expect(b.company).to.eql('Flower Shop');
+        pm.expect(b.count).to.eql(6);
+        pm.expect(b.items[0]).to.have.all.keys('id','name','color','price','stock');
+      });
+    language: text/javascript
+order: 1000

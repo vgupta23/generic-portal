@@ -1,0 +1,19 @@
+# Retail API in Docker Desktop. Keycloak (see ../scripts/start-keycloak.sh) must be running on the host's port 8080.
+services:
+  retail-api:
+    build: .
+    image: retail-api:1.0.0
+    container_name: retail-api
+    ports:
+      - "8090:8080"          # host 8090 -> container 8080 (host 8080 is Keycloak)
+    environment:
+      # Tokens issued to a browser/Postman on localhost carry this issuer ...
+      RETAIL_SECURITY_ISSUER: http://localhost:8080/realms/demo
+      # ... but inside the container "localhost" is the container itself, so signing keys are fetched via the host.
+      RETAIL_SECURITY_JWK_SET_URI: http://host.docker.internal:8080/realms/demo/protocol/openid-connect/certs
+      RETAIL_SECURITY_ACCESS_AUDIENCE: retail-ui
+      # Extend (comma-separated) to accept ID tokens from additional agent clients - see docs/DESIGN.md section 13.
+      RETAIL_SECURITY_ID_AUDIENCES: ${RETAIL_SECURITY_ID_AUDIENCES:-demo-ui,retail-api-test}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # needed on Linux; Docker Desktop already provides it
+    restart: unless-stopped

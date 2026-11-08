@@ -46,6 +46,7 @@ for you, but they do **not** install the software below.
 | 3001 | Retail UI |
 | 3002 | CRM gateway |
 | 3003 | CRM backend (bound to 127.0.0.1) |
+| 8090 | Retail API container (optional, `retail-api/`) |
 
 **Hardware:** about 1 GB free RAM for the Keycloak container, 1-2 GB disk for the image and `node_modules`. Docker
 Desktop should have at least 2 GB of memory assigned. Verified on macOS (Apple silicon, linux/arm64 image); Linux and
@@ -134,6 +135,29 @@ token with the new claim. Add a tile for a new role in `portal/src/tiles.js`.
 
 ---
 
+## 3b. Retail REST API (Spring Boot, optional)
+
+`retail-api/` is a separate Spring Boot service exposing `/api/toys` and `/api/flowers`, protected by the same Keycloak
+tokens: an **access token** (`Authorization: Bearer`) plus the **ID token** (`X-ID-Token`), role `RETAILUI` for the DUNS that owns
+the data, JSON `access_denied` (401/403) otherwise. It runs as a Docker container on **port 8090**, with 37 Maven tests and a
+Postman collection. Needs Docker only (Maven runs in a container):
+
+```bash
+cd retail-api
+./scripts/mvn-docker.sh test                 # 37 tests
+docker compose up -d --build                 # container "retail-api" in Docker Desktop
+./scripts/setup-keycloak-api-test.sh         # dev-only test client + users for Postman/curl
+./examples/call-api.sh                       # get both tokens from Keycloak and call the API
+```
+
+**External agents** (scripts, services, AI agents) follow this sequence: *register an OIDC client* (`scripts/register-agent-client.sh my-agent --device`)
+-> *give the user `RETAILUI` in their `duns_roles` attribute* -> *allow-list the client in `retail-api/.env`* and `docker compose up -d`
+-> *get an access token + ID token with `scope=openid`* (device grant, auth code + PKCE, or password grant for dev) -> *call the API with
+both tokens* -> *refresh every ~5 minutes*. Step-by-step commands: [retail-api/README.md](retail-api/README.md#for-external-agents-how-to-get-tokens-and-call-the-api);
+diagrams, validation rules and troubleshooting: [docs/DESIGN.md section 13](docs/DESIGN.md#13-retail-rest-api-and-external-agents).
+
+---
+
 ## 4. Stopping, restarting, resetting
 
 ```bash
@@ -179,6 +203,8 @@ The portal and Retail UI run in Vite dev mode and hot-reload automatically.
 ├── crm-app/                     CRM (Node server.js + React UI, 127.0.0.1:3003)
 │   ├── server.js                HMAC check, REMOTE_USER parsing, /crm/api/*
 │   └── src/App.jsx              Dashboard / Customers / Snoop
+├── retail-api/                  Spring Boot REST API (toys, flowers): Dockerfile, compose, Maven tests, Postman collection,
+│                                agent client registration script, example client (examples/call-api.sh)
 ├── ui-legacy/                   first single-page prototype (superseded, not used)
 ├── logs/  .run/                 created at runtime (git-ignored)
 ```

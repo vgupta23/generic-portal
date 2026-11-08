@@ -1,0 +1,17 @@
+$kind: http-request
+name: GET /api/toys/t1
+url: "{{baseUrl}}/api/toys/t1"
+method: GET
+headers:
+  Authorization: Bearer {{access_apiuser}}
+  X-ID-Token: "{{id_apiuser}}"
+  Accept: application/json
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('200 Teddy Bear', function () {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().name).to.eql('Teddy Bear');
+      });
+    language: text/javascript
+order: 2000

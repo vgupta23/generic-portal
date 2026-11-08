@@ -1,0 +1,11 @@
+$kind: collection
+description: |-
+  Run with the Collection Runner (top to bottom). Prerequisites: Keycloak running and configured, ./scripts/setup-keycloak-api-test.sh executed, retail-api container running on http://localhost:8090.
+
+  The first folder fetches real tokens from Keycloak; the rest call the API with them.
+variables:
+  baseUrl: http://localhost:8090
+  keycloakUrl: http://localhost:8080
+  realm: demo
+  clientId: retail-api-test
+  password: password

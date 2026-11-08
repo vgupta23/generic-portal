@@ -1,0 +1,13 @@
+$kind: http-request
+name: GET /api/flowers/does-not-exist
+url: "{{baseUrl}}/api/flowers/does-not-exist"
+method: GET
+headers:
+  Authorization: Bearer {{access_apiuser}}
+  X-ID-Token: "{{id_apiuser}}"
+  Accept: application/json
+scripts:
+  - type: afterResponse
+    code: pm.test('404 not_found', function () { pm.response.to.have.status(404); });
+    language: text/javascript
+order: 3000

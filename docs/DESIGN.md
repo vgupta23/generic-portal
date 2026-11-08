@@ -20,6 +20,7 @@ Multi-application portal with Keycloak OIDC, MFA, DUNS-scoped authorization, and
 10. [Direct-access and bookmark behaviour](#10-direct-access-and-bookmark-behaviour)
 11. [Reference tables](#11-reference-tables)
 12. [Security analysis, limitations, production hardening](#12-security-analysis)
+13. [Retail REST API and external agents](#13-retail-rest-api-and-external-agents) (endpoints, validation, agent onboarding, getting the JWTs, calling the API)
 
 ---
 
@@ -37,6 +38,7 @@ Multi-application portal with Keycloak OIDC, MFA, DUNS-scoped authorization, and
 | 8 | CRM receives user identity as an HTTP header (`REMOTE_USER = <duns>$<username>`) rather than a token, via a shim layer that also lists DUNS tiles | Flow E, section 9 |
 | 9 | Apps can only be launched from the portal; direct URLs, bookmarks and forged headers are refused | section 10 |
 | 10 | A "Snoop" page shows every HTTP header the CRM received | section 9.6 |
+| 11 | A REST API for toys and flowers that accepts only valid access + ID JWTs with `RETAILUI`, and a documented way for external agents to get those tokens | section 13 |
 
 Out of scope: user self-registration, user administration UI, persistence of business data (all catalog and
 customer data is hard-coded), TLS, high availability.
@@ -81,6 +83,7 @@ flowchart LR
 | Retail UI | `retail-ui/` | 3001 | React 19 + Vite dev server | Validates tokens in the browser; per-DUNS product catalog |
 | CRM gateway ("shim") | `crm-shim/` | 3002 | Node `http` server + React build | Server-side token validation; session; DUNS picker; reverse proxy that injects `REMOTE_USER` |
 | CRM backend + UI | `crm-app/` | 3003 (127.0.0.1 only) | Node `http` server + React build | Serves the CRM UI and APIs; identifies the caller only from a signed `REMOTE_USER` |
+| Retail API | `retail-api/` | 8090 (Docker container) | Spring Boot 3.5, Java 21 | REST endpoints for toys/flowers; verifies access + ID JWTs and the `RETAILUI` role (section 13) |
 
 The portal, Retail UI and the gateway are separate **origins** (different ports), which is why hand-off uses the
 URL fragment and `postMessage` rather than shared storage. The CRM UI and gateway share the origin
@@ -651,6 +654,7 @@ All require a valid HMAC-signed `REMOTE_USER`.
 | Product catalogs | | `retail-ui/src/catalog.js` |
 | CRM customer data | | `crm-app/server.js` |
 | DUNS role data, realm, clients, mappers | | `scripts/setup-keycloak.sh` |
+| Retail API issuer, JWKS URI, audiences, required role, catalog DUNS | | `retail-api/src/main/resources/application.yml`, `retail-api/docker-compose.yml` |
 
 ### 11.4 Timers at a glance
 
@@ -696,7 +700,8 @@ All require a valid HMAC-signed `REMOTE_USER`.
 6. The Retail UI refresh channel needs the portal tab to stay open.
 7. The same `demo-ui` token is used by all consumers; separation is by audience only, not by per-app clients.
 8. Hard-coded origins (`localhost:3000-3003`, `8080`) in source; changing hosts requires code and Keycloak edits.
-9. No automated test suite beyond `scripts/smoke-test.sh`.
+9. Automated tests exist only for the Retail API (37 Maven tests, Postman collection) and `scripts/smoke-test.sh`; the UIs and the gateway have none.
+10. Retail API: no per-request revocation check, plain HTTP, in-memory data; the dev test client enables the password grant (section 13.10).
 
 ### 12.3 What to change for production
 
@@ -710,3 +715,312 @@ All require a valid HMAC-signed `REMOTE_USER`.
 - Refresh-token rotation and reuse detection; consider the BFF pattern so browsers never hold tokens.
 - Replace hard-coded data with real services; add rate limiting, audit logging, security headers (CSP,
   `X-Content-Type-Options`, `frame-ancestors`), and automated tests.
+
+---
+
+## 13. Retail REST API and external agents
+
+`retail-api/` is a Spring Boot service that exposes the toy and flower catalogs over REST for **callers that are not
+the portal**: scripts, back-office tools, other services, AI agents. It is protected by the same Keycloak realm and the
+same custom claims as the UIs. This section documents the API, what it validates, and, step by step, what an external
+agent must set up and do to obtain an **access token and an ID token** and call it.
+
+### 13.1 Endpoints
+
+| Method + path | Authorization (role `RETAILUI` under DUNS ...) | Result |
+|---|---|---|
+| `GET /api/toys`, `GET /api/toys/{id}` | `111111111` (Toy Shop) | catalog / one toy (`t1`..`t6`) |
+| `GET /api/flowers`, `GET /api/flowers/{id}` | `222222222` (Flower Shop) | catalog / one flower (`f1`..`f6`) |
+| `GET /api/me` | any DUNS | the identity and custom claims the API derived from the verified tokens |
+| `GET /actuator/health` | none | liveness (public) |
+
+Every `/api/**` call needs **two** tokens:
+
+```
+Authorization: Bearer <access token>
+X-ID-Token:    <ID token>
+```
+
+Runs as container `retail-api` (image `retail-api:1.0.0`) on host port **8090**.
+
+### 13.2 Architecture
+
+```mermaid
+flowchart LR
+    AG[External agent<br/>script / service / tool]
+    U[End user<br/>approves in a browser<br/>device and auth-code flows only]
+    KC[(Keycloak<br/>localhost:8080<br/>realm demo)]
+    subgraph DD [Docker Desktop]
+      API[retail-api container<br/>host :8090 -> container :8080<br/>Spring Boot 3.5 / Java 21]
+    end
+
+    AG -- "1 obtain access + ID token<br/>scope=openid" --> KC
+    U -. "approves the agent" .-> KC
+    AG -- "2 GET /api/...<br/>Authorization + X-ID-Token" --> API
+    API -- "3 signing keys (JWKS), cached<br/>via host.docker.internal:8080" --> KC
+```
+
+The agent talks to Keycloak and to the API; the API talks to Keycloak only to fetch (and cache) the public signing keys.
+It is stateless: no session, no per-request call to Keycloak.
+
+### 13.3 What the API validates
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Agent
+    participant F as Spring Security filter chain
+    participant D as Access / ID token decoders
+    participant K as Keycloak JWKS (cached)
+    participant C as Controller
+
+    A->>F: GET /api/flowers + Authorization + X-ID-Token
+    F->>D: BearerTokenAuthenticationFilter: decode the ACCESS token
+    D->>K: signing key for the token's kid (fetched once, cached, refetched on unknown kid)
+    D->>D: RS256 signature, iss, exp/nbf (60 s skew), aud contains retail-ui
+    alt access token invalid or absent
+        D-->>A: 401 access_denied (JSON)
+    end
+    F->>F: duns_roles claim -> authorities such as 222222222:RETAILUI
+    F->>D: IdTokenFilter: decode the ID token from X-ID-Token
+    D->>D: RS256 signature, iss, exp, aud in demo-ui / retail-api-test / allow-listed agents
+    F->>F: ID token sub equals access token sub
+    alt ID token missing, invalid or from another user
+        F-->>A: 401 access_denied (JSON)
+    end
+    F->>F: AuthorizationFilter: /api/flowers needs authority 222222222:RETAILUI
+    alt authority missing
+        F-->>A: 403 access_denied (JSON)
+    end
+    F->>C: authorized
+    C-->>A: 200 JSON
+```
+
+**Checks, in order**
+
+| # | Check | On failure |
+|---|---|---|
+| 1 | `Authorization: Bearer ...` present, parseable JWT, `alg` = RS256 (so `none` and HS256 are rejected) | 401 |
+| 2 | Access token signature valid against a key in Keycloak's JWKS | 401 |
+| 3 | Access token `iss` = `http://localhost:8080/realms/demo`, not expired | 401 |
+| 4 | Access token `aud` contains `retail-ui` (the audience mapper puts it there) | 401 |
+| 5 | `X-ID-Token` present | 401 |
+| 6 | ID token signature, `iss`, expiry valid | 401 |
+| 7 | ID token `aud` is one of `RETAIL_SECURITY_ID_AUDIENCES` (default `demo-ui, retail-api-test`) | 401 |
+| 8 | ID token `sub` = access token `sub` | 401 |
+| 9 | Access token `duns_roles` grants `RETAILUI` for the DUNS that owns the endpoint (toys 111111111, flowers 222222222; `/api/me` any DUNS) | 403 |
+| 10 | Token verification cannot run because Keycloak's signing keys are unreachable | **503** `service_unavailable` + `Retry-After: 5` (not the caller's fault; the API starts without Keycloak and recovers on its own) |
+
+Authentication and authorization failures use one body, so callers handle a single shape:
+
+```json
+{ "timestamp": "2026-11-07T20:04:51Z", "status": 401, "error": "access_denied",
+  "message": "Access denied: ...", "path": "/api/toys" }
+```
+
+401 responses also carry `WWW-Authenticate: Bearer realm="retail-api"`. Unknown paths are never 404 for unauthenticated or
+unauthorized callers (401/403), so the API does not reveal which routes exist.
+
+Why both tokens? The access token carries what the caller may do (`duns_roles`, audience) and the ID token proves who
+authenticated and to which client. Requiring both, bound by `sub`, stops a caller from combining a token that grants rights with
+an unrelated identity token.
+
+### 13.4 One-time setup for an external agent
+
+Three parties are involved: the **Keycloak administrator**, the **API operator**, and the **end user** the agent acts for.
+(In this repo one person plays all three.)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor ADM as Keycloak admin
+    actor OPS as API operator
+    actor USR as End user
+    participant KC as Keycloak
+    participant API as retail-api
+
+    ADM->>KC: realm demo exists with claim mappers (scripts/setup-keycloak.sh)
+    ADM->>KC: register the agent's OIDC client (scripts/register-agent-client.sh my-agent --device)
+    KC-->>ADM: client id (+ secret if confidential), token and device endpoints
+    ADM->>KC: user attribute duns_roles contains RETAILUI for the DUNS the agent must reach
+    OPS->>API: add "my-agent" to RETAIL_SECURITY_ID_AUDIENCES (retail-api/.env), docker compose up -d
+    OPS->>ADM: hand the agent its client id (and secret) plus the token endpoint URL
+    Note over USR,KC: at run time (13.5) the user signs in and approves the agent
+```
+
+| # | Who | Action | Command / where | What breaks if skipped |
+|---|---|---|---|---|
+| 1 | Admin | Keycloak running with the `demo` realm, claim mappers, `duns_roles` attribute | `./scripts/start-keycloak.sh && ./scripts/setup-keycloak.sh` | no tokens at all |
+| 2 | Admin | Register the agent as an OIDC client. Choose the grant it will use (see 13.5). The script adds the same mappers as the portal (`duns_roles`, `roles`, `department`, `employee_id`) and the **`retail-ui` audience on the access token** | `cd retail-api && ./scripts/register-agent-client.sh my-agent --device` (add `--confidential` for a client secret, `--password-grant` for dev/test) | access token lacks `duns_roles` / `aud retail-ui` -> 401 or 403 |
+| 3 | Admin | Make sure the user the agent acts for has `RETAILUI` for the DUNS they need, in the `duns_roles` attribute, e.g. `111111111:USA,RETAILUI` | Admin console -> Users -> *user* -> Attributes -> **DUNS roles** | 403 `role RETAILUI is required for DUNS ...` |
+| 4 | Operator | **Allow-list the client's ID-token audience** in the API. The ID token's `aud` is the client id, and the API accepts only listed clients | create `retail-api/.env` containing `RETAIL_SECURITY_ID_AUDIENCES=demo-ui,retail-api-test,my-agent`, then `docker compose up -d` (keep existing entries; use `.env`, because an inline variable is lost on the next `up`) | 401 `Token audience [my-agent] is not accepted by this API` |
+| 5 | Operator | Give the agent: client id, client secret (if confidential), token endpoint `http://localhost:8080/realms/demo/protocol/openid-connect/token`, API base `http://localhost:8090` | out of band | |
+
+Facts about the registered client (what `register-agent-client.sh` sets):
+
+- Standard (browser redirect) flow **off**, service accounts **off**. A client-credentials token has no user and no ID token,
+  so it can never satisfy this API.
+- Public client by default; `--confidential` adds a secret that the agent must send as `client_secret`.
+- The `retail-ui` audience mapper is on the **access** token only; the ID token's audience is the client itself.
+
+### 13.5 Run time: how the agent gets its two tokens
+
+Both tokens come from the same Keycloak token response when the request includes **`scope=openid`** (without it Keycloak returns
+no `id_token`). Pick one grant; all three yield `access_token`, `id_token` and `refresh_token`.
+
+| Grant | Use for | User interaction | MFA | Verified here |
+|---|---|---|---|---|
+| **A. Device authorization** (recommended for headless agents acting for a person) | CLIs, daemons, AI agents, anything without a browser | user opens a URL on any device, signs in, approves | works (the portal's TOTP applies) | yes, end to end |
+| **B. Authorization code + PKCE** | agents that can open a browser and receive a redirect (same flow as the portal, section 4) | browser sign-in | works | same flow as the portal; needs "Standard flow" and redirect URIs enabled on the client |
+| **C. Password (direct) grant** | local development, CI, Postman, `examples/call-api.sh` | none (agent holds the password) | **cannot** (users must be MFA-less) | yes |
+
+#### A. Device authorization grant (headless agent, user approves)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AG as Agent
+    participant KC as Keycloak
+    actor U as User (any browser)
+    participant API as retail-api
+
+    AG->>KC: POST /auth/device  client_id=my-agent, scope=openid
+    KC-->>AG: device_code, user_code, verification_uri(_complete), interval=5, expires_in=600
+    AG->>U: "Open verification_uri_complete and approve" (print or display it)
+    U->>KC: opens the URL, signs in (password + TOTP), approves "Grant Access to Agent: my-agent"
+    loop every `interval` seconds until approved or expired
+        AG->>KC: POST /token  grant_type=urn:ietf:params:oauth:grant-type:device_code, device_code
+        KC-->>AG: 400 authorization_pending (or slow_down: wait longer)
+    end
+    KC-->>AG: access_token, id_token, refresh_token
+    AG->>API: GET /api/toys  Authorization: Bearer access_token  X-ID-Token: id_token
+    API-->>AG: 200 {...}
+```
+
+```bash
+KC=http://localhost:8080/realms/demo/protocol/openid-connect
+
+# 1. ask for a device code
+curl -s -d client_id=my-agent -d scope=openid $KC/auth/device
+#  -> {"device_code":"...","user_code":"ABCD-EFGH",
+#      "verification_uri_complete":"http://localhost:8080/realms/demo/device?user_code=ABCD-EFGH",
+#      "expires_in":600,"interval":5}
+
+# 2. the user opens verification_uri_complete in a browser, signs in, clicks Yes
+
+# 3. poll (no faster than `interval`) until it returns tokens
+curl -s -d client_id=my-agent -d grant_type=urn:ietf:params:oauth:grant-type:device_code \
+     -d device_code=<device_code> $KC/token
+#  -> {"error":"authorization_pending"} ... then {"access_token":"...","id_token":"...","refresh_token":"..."}
+```
+
+For a confidential client add `-d client_secret=<secret>` to the polling and refresh requests.
+
+#### B. Authorization code + PKCE
+
+Identical to section 4 with the agent's `client_id`: send the user to `/protocol/openid-connect/auth` with `response_type=code`,
+`scope=openid`, `code_challenge` (S256), `state`, `nonce` and a registered `redirect_uri`; exchange the returned code at `/token`
+with the `code_verifier`. The client needs *Standard flow* and the redirect URI enabled in the admin console (the registration
+script leaves them off). The ID token's `aud` is again the agent's client id, so step 4 of 13.4 still applies.
+
+#### C. Password grant (dev/test only)
+
+```bash
+curl -s -d client_id=my-agent -d grant_type=password -d username=apiuser -d password=password \
+     -d scope=openid http://localhost:8080/realms/demo/protocol/openid-connect/token
+#  -> {"access_token":"...","id_token":"...","refresh_token":"...","expires_in":300}
+```
+
+`retail-api/examples/call-api.sh` runs this and then calls the API (and a refresh). The dev client `retail-api-test` and the
+users `apiuser`, `toyonly`, `noretail` come from `retail-api/scripts/setup-keycloak-api-test.sh`.
+
+### 13.6 Calling the API
+
+```bash
+ACCESS=<access_token>   ID=<id_token>
+
+curl -H "Authorization: Bearer $ACCESS" -H "X-ID-Token: $ID" http://localhost:8090/api/toys
+curl -H "Authorization: Bearer $ACCESS" -H "X-ID-Token: $ID" http://localhost:8090/api/flowers/f1
+curl -H "Authorization: Bearer $ACCESS" -H "X-ID-Token: $ID" http://localhost:8090/api/me
+```
+
+Success (`200`):
+
+```json
+{ "duns": "111111111", "company": "Toy Shop", "count": 6,
+  "items": [ { "id": "t1", "name": "Teddy Bear", "category": "Plush", "price": 19.99, "stock": 42 }, ... ] }
+```
+
+### 13.7 Token lifetime and refresh
+
+| Token | Lifetime | Renewal |
+|---|---|---|
+| access token and ID token | 300 s | request new ones with the refresh token |
+| refresh token | until the Keycloak SSO session ends (30 min idle, 10 h max) | each refresh extends the idle window |
+
+```bash
+curl -s -d client_id=my-agent -d grant_type=refresh_token -d refresh_token=<refresh_token> -d scope=openid \
+     http://localhost:8080/realms/demo/protocol/openid-connect/token
+#  -> new access_token AND id_token (replace both; the API needs a matching pair)
+```
+
+Recommended agent loop: before each API call, if the access token expires in under ~30 s, refresh. If refresh returns
+`invalid_grant` (session ended), run the original grant again (for device flow that means asking the user to approve again).
+The `exp` claim is in the token payload (second dot-separated segment, base64url JSON).
+
+### 13.8 End-to-end runtime sequence (device grant)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AG as Agent
+    participant KC as Keycloak
+    actor U as User
+    participant API as retail-api
+    participant J as JWKS endpoint
+
+    Note over AG,API: setup of 13.4 already done
+    AG->>KC: device authorization request (client_id, scope=openid)
+    KC-->>AG: device_code + verification URL
+    U->>KC: sign in (password + TOTP) and approve
+    AG->>KC: poll token endpoint
+    KC-->>AG: access_token (aud retail-ui, duns_roles) + id_token (aud my-agent) + refresh_token
+    AG->>API: GET /api/flowers  Bearer access_token + X-ID-Token
+    API->>J: GET signing keys (first call only, then cached)
+    API->>API: verify both tokens, sub match, authority 222222222:RETAILUI
+    API-->>AG: 200 Flower Shop catalog
+    Note over AG,KC: ~4.5 min later
+    AG->>KC: refresh_token grant
+    KC-->>AG: fresh access_token + id_token
+    AG->>API: next call with the new pair
+```
+
+### 13.9 Troubleshooting for agents
+
+| Response / message | Cause | Fix |
+|---|---|---|
+| 401 `a valid access token is required` | no `Authorization: Bearer` header | send it |
+| 401 `...Jwt expired at ...` | access or ID token older than 5 min | refresh (13.7) |
+| 401 `...Signed JWT rejected: Invalid signature` | token altered or from another realm/Keycloak | use a token straight from this Keycloak |
+| 401 `...Token audience [...] is not accepted by this API` on the **access** token | client lacks the `retail-ui` audience mapper | register the client with `register-agent-client.sh` (13.4 step 2) |
+| 401 `invalid ID token: ... Token audience [my-agent] is not accepted` | client not allow-listed in the API | 13.4 step 4 (`.env` + `docker compose up -d`) |
+| 401 `ID token missing (send it in the X-ID-Token header)` | second token not sent | add the header |
+| 401 `ID token does not belong to the same user as the access token` | tokens from two different users/sessions | use the pair from one token response |
+| 503 `Token verification is temporarily unavailable` (with `Retry-After`) | API cannot fetch signing keys from Keycloak (down, or container cannot reach `host.docker.internal:8080`) | wait and retry; check Keycloak; the API recovers by itself |
+| 403 `role RETAILUI is required for DUNS 222222222` | user's `duns_roles` lacks `RETAILUI` for that DUNS | admin edits the user attribute (13.4 step 3), then the agent gets **new** tokens (claims are copied into tokens at issue time) |
+| token response has no `id_token` (then 401 `ID token missing`) | `scope=openid` missing from the token request | add `scope=openid` |
+| `unauthorized_client` at the token endpoint | confidential client without `client_secret`, or grant not enabled on the client | send the secret / re-run the registration script with the right flag |
+| `slow_down` while polling the device grant | polling faster than `interval` | wait `interval` seconds (it grows after `slow_down`) |
+
+### 13.10 Security notes for agents
+
+- Prefer the **device** or **authorization-code + PKCE** grant. The password grant exists here for development, because it needs the
+  agent to hold the user's password and cannot work with MFA.
+- A confidential client's secret must live in a secret store, never in the repository or the prompt of an AI agent.
+- Tokens are bearer credentials: send them only over HTTPS in a real deployment (this demo is plain HTTP on localhost).
+- The API does **not** ask Keycloak whether a token has been revoked or the user logged out; a stolen token works until it
+  expires (<= 5 min). The window is the access token lifetime.
+- The allow-list of ID-token audiences (`RETAIL_SECURITY_ID_AUDIENCES`) is the gate that decides *which clients* may call the API;
+  add a client only after reviewing it.
+- Authorization data comes from user attributes at token-issue time; role changes take effect when the agent next obtains
+  or refreshes tokens.

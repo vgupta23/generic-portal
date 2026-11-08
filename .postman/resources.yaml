@@ -1,0 +1,7 @@
+# Use this workspace to collaborate
+workspace:
+  id: 01685f5c-c801-4d97-82e5-81cd1c7d04a9
+
+localResources:
+  collections:
+    - ../retail-api/postman/Retail API (toys & flowers)

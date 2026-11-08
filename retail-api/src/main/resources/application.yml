@@ -1,0 +1,28 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: retail-api
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+retail:
+  security:
+    # Token issuer expected in the `iss` claim (what Keycloak puts in tokens it issues to a browser on localhost).
+    issuer: http://localhost:8080/realms/demo
+    # Where the API fetches Keycloak's signing keys. Inside Docker, localhost is the container itself,
+    # so docker-compose overrides this with host.docker.internal.
+    jwk-set-uri: http://localhost:8080/realms/demo/protocol/openid-connect/certs
+    # `aud` that the ACCESS token must contain (Keycloak audience mapper on demo-ui adds retail-ui).
+    access-audience: retail-ui
+    # `aud` values accepted on the ID token (the OIDC client that obtained it).
+    id-audiences: demo-ui,retail-api-test
+    # Role that must be present for the DUNS that owns the requested data.
+    required-role: RETAILUI
+    toy-duns: "111111111"
+    flower-duns: "222222222"
