@@ -58,6 +58,7 @@ such as `111111111:RETAILUI`; the rules live in `security/SecurityConfig.java`.
 
 - **Docker Desktop** running (that is all you need: Maven and the JDK run inside containers).
 - The main solution's Keycloak running and configured: `./scripts/start-keycloak.sh && ./scripts/setup-keycloak.sh` (repo root).
+- Then run `./scripts/setup-keycloak-api.sh` (repo root): it performs every Keycloak step for the API in one go (the individual scripts below are what it calls).
 - Free host port **8090**.
 - Optional: a local JDK 21 + Maven 3.9 if you prefer `mvn test` directly instead of `scripts/mvn-docker.sh`.
 - Optional: Postman (desktop or web) for the collection; Node.js if you want to run it headless with Newman.

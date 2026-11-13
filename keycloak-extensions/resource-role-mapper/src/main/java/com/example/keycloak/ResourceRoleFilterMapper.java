@@ -1,4 +1,4 @@
-    package com.example.keycloak;
+    apackage com.example.keycloak;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;

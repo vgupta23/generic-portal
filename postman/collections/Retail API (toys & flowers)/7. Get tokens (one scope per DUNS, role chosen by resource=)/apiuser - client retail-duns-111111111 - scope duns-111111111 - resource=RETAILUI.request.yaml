@@ -1,20 +1,20 @@
 $kind: http-request
-name: "apiuser | client retail-duns-111111111 | scope duns-111111111 | resource=RETAILUI"
-description: "DUNS 111111111 is selected by the client (retail-duns-111111111 + its own secret). The scope `duns-111111111` covers ALL roles of that DUNS; the request parameter `resource=RETAILUI` picks which of them is issued."
+name: apiuser | client retail-duns-111111111 | scope duns-111111111 | resource=RETAILUI
+description: DUNS 111111111 is selected by the client (retail-duns-111111111 + its own secret). The scope `duns-111111111` covers ALL roles of that DUNS; the request parameter `resource=RETAILUI` picks which of them is issued.
 url: "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token"
 method: POST
 headers:
-  Content-Type: "application/x-www-form-urlencoded"
+  Content-Type: application/x-www-form-urlencoded
 body:
   type: urlencoded
   content:
-    client_id: "retail-duns-111111111"
+    client_id: retail-duns-111111111
     client_secret: "{{secret_111111111}}"
-    grant_type: "password"
-    username: "apiuser"
+    grant_type: password
+    username: apiuser
     password: "{{password}}"
-    scope: "openid duns-111111111"
-    resource: "RETAILUI"
+    scope: openid duns-111111111
+    resource: RETAILUI
 scripts:
   - type: afterResponse
     code: |-
@@ -44,4 +44,5 @@ scripts:
       });
       console.log('TOKEN apiuser | client retail-duns-111111111 | scope duns-111111111 | resource=RETAILUI | roles in token: ' + JSON.stringify(claims.resource_access));
     language: text/javascript
+examples: .resources/apiuser - client retail-duns-111111111 - scope duns-111111111 - resource=RETAILUI.resources/examples
 order: 1000

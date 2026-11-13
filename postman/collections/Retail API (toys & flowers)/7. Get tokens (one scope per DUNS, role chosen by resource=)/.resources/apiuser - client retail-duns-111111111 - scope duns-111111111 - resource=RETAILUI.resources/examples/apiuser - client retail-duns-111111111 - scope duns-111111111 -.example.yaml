@@ -1,0 +1,45 @@
+$kind: http-example
+name: apiuser | client retail-duns-111111111 | scope duns-111111111 | resource=RETAILUI
+request:
+  url: "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token"
+  method: POST
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body:
+    type: urlencoded
+    content:
+      client_id: retail-duns-111111111
+      client_secret: "{{secret_111111111}}"
+      grant_type: password
+      username: apiuser
+      password: "{{password}}"
+      scope: openid duns-111111111
+      resource: RETAILUI
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    Cache-Control: no-store
+    Pragma: no-cache
+    content-length: "3413"
+    Content-Type: application/json
+    Referrer-Policy: no-referrer
+    Strict-Transport-Security: max-age=31536000; includeSubDomains
+    X-Content-Type-Options: nosniff
+    X-Frame-Options: SAMEORIGIN
+    X-Robots-Tag: none
+  body:
+    type: json
+    content: |-
+      {
+        "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJ5bGRMU2Rad0FlS1BXZnduWHZlMFpIZXBNS3ZMVnVpaXNwU0dUSU95VXJZIn0.eyJleHAiOjE3OTQ1OTU5OTYsImlhdCI6MTc5NDU5NTY5NiwianRpIjoib25ydHJvOjNjMmJmZTI1LWZkYzMtOWVlYS0wMzgwLTJmZDM2M2Q0NTExNSIsImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA4MC9yZWFsbXMvZGVtbyIsImF1ZCI6WyJyZXRhaWwtdWkiLCJkdW5zLTExMTExMTExMSJdLCJzdWIiOiI3ZDRhMzg1YS00NTFmLTQ5MmItYjQ4MS0yMmRiNmYzNWYxYTkiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJyZXRhaWwtZHVucy0xMTExMTExMTEiLCJzaWQiOiJ5TE9Cc2lGYmRQcXNEbWQzQ3p3WEJ1WjMiLCJhY3IiOiIxIiwicmVzb3VyY2VfYWNjZXNzIjp7ImR1bnMtMTExMTExMTExIjp7InJvbGVzIjpbIlJFVEFJTFVJIl19fSwic2NvcGUiOiJvcGVuaWQgcHJvZmlsZSBkdW5zLTExMTExMTExMSBlbWFpbCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJlbXBsb3llZV9pZCI6IlQtYXBpdXNlciIsIm5hbWUiOiJhcGl1c2VyIFRlc3QiLCJkdW5zIjoiMTExMTExMTExIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiYXBpdXNlciIsImdpdmVuX25hbWUiOiJhcGl1c2VyIiwiZGVwYXJ0bWVudCI6IlFBIiwiZmFtaWx5X25hbWUiOiJUZXN0IiwiZW1haWwiOiJhcGl1c2VyQGV4YW1wbGUuY29tIn0.EDVtkVRoClVnxksnAYzmEnNK6h7mM8p4mAztUcJS7rD4bSZP0vy6QWH_Lvu3OzaL6qigliv1Dl8NXAPglZweRSr2HuQacR3cCrBiLXPwSebcpxMtf2koBKxDIhtFvHPfLiQmd3EgTJu6cejNVR1qyE9mqME7HVQkw8z3A8bXJ1dFiNuVoOjQk7vGtFAC4FS9GDNOJSg5onsraACKjG_cmcmhM2wNp--r11iPg42_nXTvd43yVeJmqy_zyr7xz2cGh5j5cxhprBdXxc3USpM3NeJH-gMjEJL0k3Me82vMt0SyPjzjHnOpa0KKevXhib-F3fRba66CjhbdGd-CdwZ02g",
+        "expires_in": 300,
+        "refresh_expires_in": 1800,
+        "refresh_token": "eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICIzYzg2YTFiZC0zOGIzLTQ3NzktYmEyYi02NTMwMmY0MzE3NTIifQ.eyJleHAiOjE3OTQ1OTc0OTYsImlhdCI6MTc5NDU5NTY5NiwianRpIjoiYzEwZGE2ODctYmQ4NC1iYzhlLTk1ZjEtOTAxNzc5ZWEzMTVlIiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9kZW1vIiwiYXVkIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9kZW1vIiwic3ViIjoiN2Q0YTM4NWEtNDUxZi00OTJiLWI0ODEtMjJkYjZmMzVmMWE5IiwidHlwIjoiUmVmcmVzaCIsImF6cCI6InJldGFpbC1kdW5zLTExMTExMTExMSIsInNpZCI6InlMT0JzaUZiZFBxc0RtZDNDendYQnVaMyIsInNjb3BlIjoib3BlbmlkIHdlYi1vcmlnaW5zIHByb2ZpbGUgZHVucy0xMTExMTExMTEgYmFzaWMgYWNyIHJvbGVzIGVtYWlsIiwiYXVkX3giOlsicmV0YWlsLXVpIiwiZHVucy0xMTExMTExMTEiXSwicHJvdiI6ImRlZmF1bHQifQ.5X85WF4Qjd-ieBBkb_8XiedCOqm1mSCmpDxYhI_CZBSt_VqJmO4UcQj9X5dAt2SH04UcyaXS-TWym_c1Bfwd2A",
+        "token_type": "Bearer",
+        "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJ5bGRMU2Rad0FlS1BXZnduWHZlMFpIZXBNS3ZMVnVpaXNwU0dUSU95VXJZIn0.eyJleHAiOjE3OTQ1OTU5OTYsImlhdCI6MTc5NDU5NTY5NiwianRpIjoiNmFmZDYxMGQtYjUzOC03NGIwLTNjNzctZDVmZWVhZDZlMTYwIiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9kZW1vIiwiYXVkIjoicmV0YWlsLWR1bnMtMTExMTExMTExIiwic3ViIjoiN2Q0YTM4NWEtNDUxZi00OTJiLWI0ODEtMjJkYjZmMzVmMWE5IiwidHlwIjoiSUQiLCJhenAiOiJyZXRhaWwtZHVucy0xMTExMTExMTEiLCJzaWQiOiJ5TE9Cc2lGYmRQcXNEbWQzQ3p3WEJ1WjMiLCJhdF9oYXNoIjoiSC1LQkV6NkVEcWZxZ3J5ZklhUEJYZyIsImFjciI6IjEiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZW1wbG95ZWVfaWQiOiJULWFwaXVzZXIiLCJuYW1lIjoiYXBpdXNlciBUZXN0IiwiZHVucyI6IjExMTExMTExMSIsInByZWZlcnJlZF91c2VybmFtZSI6ImFwaXVzZXIiLCJnaXZlbl9uYW1lIjoiYXBpdXNlciIsImRlcGFydG1lbnQiOiJRQSIsImZhbWlseV9uYW1lIjoiVGVzdCIsImVtYWlsIjoiYXBpdXNlckBleGFtcGxlLmNvbSJ9.OR1-pxj6u0OjxrUVQ6EEor-xQFcPTD2UN4lpTBBm-yFCi3Zw7qv5fHS5p9vhvYQeewiw7SllaSdsQT2tJweYTVSTFlOIlve13aAwJnNy_R_n6aLYsratmHrFTovYezON21Io9XOLxRrKwmqDeTFv5RfQCeIPTC4lDehjEQyCfQcCZEFKP-liJz0WxsKz5j5Wb2VWdST2w9do_G7DUATluKv7HinoM1kSG4PUrhnQxn-uvgmlWUpFilSU5Kze8lX-_2smpOrx2TzP_zzMIhA79APMgENIcE_eeRfF4vCndu-hJWJTu0kiAUuHBSSPXS0-DLMyMXdcPeerbdOF_F1ISw",
+        "not-before-policy": 0,
+        "session_state": "yLOBsiFbdPqsDmd3CzwXBuZ3",
+        "scope": "openid profile duns-111111111 email"
+      }
+order: 1000

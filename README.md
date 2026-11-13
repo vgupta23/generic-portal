@@ -10,6 +10,11 @@ A local reference implementation of a multi-application portal secured by **Keyc
   lets the user pick a DUNS, and passes identity to the CRM as an HTTP header
   **`REMOTE_USER: <duns>$<username>`** (HMAC-signed). The CRM has a **Snoop** page that lists all headers it received.
 - Every app refuses to run unless launched from the portal.
+- **Retail REST API** (Spring Boot, Docker): `/api/toys` and `/api/flowers`, protected by the same Keycloak tokens.
+  Machine callers get **one token per DUNS**, and the role in the token is chosen at request time with a
+  `resource=` parameter (custom Keycloak provider in `keycloak-extensions/`). A **Postman collection** exercises it.
+- **Everything Keycloak needs is scripted** (realm, clients, scopes, roles, users, custom mapper): no manual
+  admin-console steps and no realm export to import.
 
 Full architecture, sequence diagrams, token-validation steps and `REMOTE_USER` details:
 **[docs/DESIGN.md](docs/DESIGN.md)**.
@@ -48,6 +53,9 @@ for you, but they do **not** install the software below.
 | 3003 | CRM backend (bound to 127.0.0.1) |
 | 8090 | Retail API container (optional, `retail-api/`) |
 
+The optional Retail API and the Keycloak mapper provider are built with Maven **inside Docker** (`maven:3.9-eclipse-temurin-21`),
+so no local JDK or Maven is needed. Postman (desktop or web) is optional, for the API collection.
+
 **Hardware:** about 1 GB free RAM for the Keycloak container, 1-2 GB disk for the image and `node_modules`. Docker
 Desktop should have at least 2 GB of memory assigned. Verified on macOS (Apple silicon, linux/arm64 image); Linux and
 Windows (WSL2) should work because only standard tooling is used, but are untested.
@@ -76,6 +84,10 @@ Run everything from the repository root.
 
 # 5. Optional: verify the install and the access-control rules
 ./scripts/smoke-test.sh
+
+# 6. Optional: the Retail REST API (see section 3b)
+./scripts/setup-keycloak-api.sh                       # all API-related Keycloak config + the mapper provider
+(cd retail-api && docker compose up -d --build)       # API on http://localhost:8090
 ```
 
 Then open **http://localhost:3000**.
@@ -92,6 +104,7 @@ otherwise.
 | `scripts/setup-keycloak.sh` | Creates realm `demo`, user-profile attributes, OTP required action, clients `demo-ui` / `retail-ui` / `crm-ui`, all protocol mappers, role `portal-admin`, user `testuser` with DUNS data. Idempotent: existing objects are left alone |
 | `scripts/start.sh` | Checks Keycloak and builds, generates a fresh `SHIM_SECRET`, starts the four processes in the background, writes `logs/*.log` and `.run/*.pid` |
 | `scripts/stop.sh` | Stops the four app processes (pid files, then anything left on ports 3000-3003). Keycloak keeps running |
+| `scripts/setup-keycloak-api.sh` | One command for all API-related Keycloak config, in order: `setup-keycloak.sh`, `retail-api/scripts/setup-keycloak-api-test.sh`, `setup-keycloak-duns-clients.sh`, the mapper `deploy.sh` (skipped if already installed; `--redeploy` forces it), `setup-keycloak-duns-resource-scopes.sh`. Idempotent; `--remove` undoes the API setup. Dev/test only |
 | `scripts/smoke-test.sh` | 13 checks: services up, Keycloak client accepted, and every "direct access is refused" rule. Needs no login |
 
 ---
@@ -137,24 +150,65 @@ token with the new claim. Add a tile for a new role in `portal/src/tiles.js`.
 
 ## 3b. Retail REST API (Spring Boot, optional)
 
-`retail-api/` is a separate Spring Boot service exposing `/api/toys` and `/api/flowers`, protected by the same Keycloak
-tokens: an **access token** (`Authorization: Bearer`) plus the **ID token** (`X-ID-Token`), role `RETAILUI` for the DUNS that owns
-the data, JSON `access_denied` (401/403) otherwise. It runs as a Docker container on **port 8090**, with 37 Maven tests and a
-Postman collection. Needs Docker only (Maven runs in a container):
+`retail-api/` is a separate Spring Boot service exposing `/api/toys` and `/api/flowers`. Every call needs an **access token**
+(`Authorization: Bearer`) plus the **ID token** (`X-ID-Token`), both from Keycloak, and the role `RETAILUI` for the DUNS that
+owns the data. Anything else gets a JSON `access_denied` (401/403). It runs as a Docker container on **port 8090**, with 37 Maven
+tests and a Postman collection. Docker is the only requirement.
+
+### Setup and run
 
 ```bash
+# Keycloak must be running (steps 2-3 above). Then, from the repo root:
+./scripts/setup-keycloak-api.sh                  # Keycloak side, see "What the script creates"
 cd retail-api
-./scripts/mvn-docker.sh test                 # 37 tests
-docker compose up -d --build                 # container "retail-api" in Docker Desktop
-./scripts/setup-keycloak-api-test.sh         # dev-only test client + users for Postman/curl
-./examples/call-api.sh                       # get both tokens from Keycloak and call the API
+./scripts/mvn-docker.sh test                     # optional: 37 tests, no Keycloak needed
+docker compose up -d --build                     # container "retail-api"
+curl http://localhost:8090/actuator/health       # {"status":"UP"}
+./examples/call-api.sh                           # get both tokens from Keycloak and call the API
 ```
 
-**External agents** (scripts, services, AI agents) follow this sequence: *register an OIDC client* (`scripts/register-agent-client.sh my-agent --device`)
--> *give the user `RETAILUI` in their `duns_roles` attribute* -> *allow-list the client in `retail-api/.env`* and `docker compose up -d`
--> *get an access token + ID token with `scope=openid`* (device grant, auth code + PKCE, or password grant for dev) -> *call the API with
-both tokens* -> *refresh every ~5 minutes*. Step-by-step commands: [retail-api/README.md](retail-api/README.md#for-external-agents-how-to-get-tokens-and-call-the-api);
-diagrams, validation rules and troubleshooting: [docs/DESIGN.md section 13](docs/DESIGN.md#13-retail-rest-api-and-external-agents).
+### What `setup-keycloak-api.sh` creates in Keycloak
+
+| Object | Names | Purpose |
+|---|---|---|
+| Test client + users (no MFA, password `password`) | client `retail-api-test`; users `apiuser`, `toyonly`, `noretail` | Browser-less tokens for curl/Postman; different DUNS roles to test 200/403 |
+| One **caller client per DUNS** | `retail-duns-111111111`, `retail-duns-222222222` (secrets `retail-duns-<DUNS>-secret`) | The client that asks for a token names the DUNS; full-scope off, so only requested roles are issued |
+| One **resource client per DUNS** | `duns-111111111`, `duns-222222222` (bearer-only) | Holds that DUNS's roles (`USA`, `RETAILUI`, `CRM`, `DAM_OP`, `CRR`) as client roles |
+| Scopes `<DUNS>:<ROLE>` | e.g. `111111111:RETAILUI` | Variant A: one scope per DUNS and role |
+| Scopes `duns-<DUNS>` + mapper `resource-role-filter` | `duns-111111111`, `duns-222222222` | Variant B: one scope per DUNS; the role is chosen by the request's `resource=` parameter |
+| Custom provider `resource-role-filter-mapper` | `keycloak-extensions/resource-role-mapper/` (Java, built in Docker, jar copied to `/opt/keycloak/providers`) | Keycloak has no built-in mapper that reads a request parameter |
+
+Token request for variant B (the role in the token is exactly the one named in `resource`; none if omitted):
+
+```bash
+curl -s http://localhost:8080/realms/demo/protocol/openid-connect/token \
+  -d client_id=retail-duns-111111111 -d client_secret=retail-duns-111111111-secret \
+  -d grant_type=password -d username=apiuser -d password=password \
+  -d scope="openid duns-111111111" -d resource=RETAILUI
+# -> access token with duns=111111111, resource_access.duns-111111111.roles=["RETAILUI"]
+```
+
+`python3 jwtdecode.py <token>` prints the claims of a token. Note: the mapper jar lives inside the Keycloak container, so after
+`docker rm keycloak` just re-run `./scripts/setup-keycloak-api.sh` (it rebuilds the jar when the provider is missing).
+The Keycloak version in the mapper's `pom.xml` must match `KEYCLOAK_IMAGE`. Remove everything API-related with
+`./scripts/setup-keycloak-api.sh --remove`. This setup enables the password grant and MFA-less users: **local dev only**.
+
+### Postman
+
+Import the folder `postman/` (Postman: *Import -> Folder*, or open it as a workspace). It contains the collection
+`Retail API (toys & flowers)` (55 requests, 139 assertions; token requests in folders 0 and 7, happy paths, 401 and 403
+cases). URLs, realm and the dev client secrets are collection variables (API `localhost:8090`, Keycloak `localhost:8080`), so
+nothing needs configuring; the bundled `Retail API` environment is empty. Run the collection top to bottom with the Collection Runner.
+`postman/export/retail-api.postman_collection.json` is for headless runs: `npx newman run postman/export/retail-api.postman_collection.json`.
+
+### External agents
+
+Scripts, services and AI agents: *register an OIDC client* (`retail-api/scripts/register-agent-client.sh my-agent --device`)
+-> *give the user `RETAILUI` in their `duns_roles` attribute* -> *allow-list the client in `retail-api/.env`* and
+`docker compose up -d` -> *get an access token + ID token with `scope=openid`* (device grant, auth code + PKCE, or the dev
+password grant) -> *call the API with both tokens* -> *refresh every ~5 minutes*. Step-by-step:
+[retail-api/README.md](retail-api/README.md#for-external-agents-how-to-get-tokens-and-call-the-api);
+diagrams and validation rules: [docs/DESIGN.md section 13](docs/DESIGN.md#13-retail-rest-api-and-external-agents).
 
 ---
 
@@ -169,6 +223,7 @@ docker start keycloak             # or: ./scripts/start-keycloak.sh
 # Full reset (deletes the realm, users, OTP enrolment):
 ./scripts/stop.sh && docker rm -f keycloak && docker volume rm keycloak_data
 ./scripts/start-keycloak.sh && ./scripts/setup-keycloak.sh && ./scripts/start.sh
+./scripts/setup-keycloak-api.sh      # only if you use the Retail API; restores clients, scopes and the mapper jar
 ```
 
 To re-test MFA enrolment without a full reset: admin console -> Users -> testuser -> Credentials -> delete the OTP
@@ -203,8 +258,13 @@ The portal and Retail UI run in Vite dev mode and hot-reload automatically.
 ├── crm-app/                     CRM (Node server.js + React UI, 127.0.0.1:3003)
 │   ├── server.js                HMAC check, REMOTE_USER parsing, /crm/api/*
 │   └── src/App.jsx              Dashboard / Customers / Snoop
-├── retail-api/                  Spring Boot REST API (toys, flowers): Dockerfile, compose, Maven tests, Postman collection,
-│                                agent client registration script, example client (examples/call-api.sh)
+├── retail-api/                  Spring Boot REST API (toys, flowers): Dockerfile, compose, Maven tests,
+│   ├── scripts/                 Keycloak setup for the API (test users, per-DUNS clients/scopes), agent registration, mvn-docker
+│   └── examples/call-api.sh     example client
+├── keycloak-extensions/
+│   └── resource-role-mapper/    custom Keycloak protocol mapper (Java SPI) that honours resource=; deploy.sh builds and installs it
+├── postman/                     Postman collection, environment, globals and a Newman-ready export
+├── jwtdecode.py                 prints the claims of a JWT
 ├── ui-legacy/                   first single-page prototype (superseded, not used)
 ├── logs/  .run/                 created at runtime (git-ignored)
 ```
@@ -221,7 +281,9 @@ Everything is intentionally hard-coded for localhost. Defaults and the places to
 | Keycloak container / image | `keycloak`, `quay.io/keycloak/keycloak:26.8.1` | `KC_CONTAINER`, `KEYCLOAK_IMAGE` env vars |
 | Test user / password | `testuser` / `password` | `TEST_USER`, `TEST_PASSWORD` env vars for `setup-keycloak.sh` (applied when the user is first created) |
 | Realm, clients | `demo`; `demo-ui`, `retail-ui`, `crm-ui` | `scripts/setup-keycloak.sh` and the `CFG` blocks in `portal/src/auth.js`, `retail-ui/src/validate.js`, `crm-shim/server.js` |
-| Ports | 8080 / 3000-3003 | Source constants and Keycloak redirect URIs / web origins; not parameterised |
+| API caller clients / secrets | `retail-duns-<DUNS>` / `retail-duns-<DUNS>-secret` | `DUNS_LIST` in `retail-api/scripts/setup-keycloak-duns-*.sh` |
+| ID-token audiences accepted by the API | `demo-ui, retail-api-test, retail-duns-111111111, retail-duns-222222222` | `RETAIL_SECURITY_ID_AUDIENCES` (compose default / `retail-api/.env`) |
+| Ports | 8080 / 3000-3003 (+ 8090 API) | Source constants and Keycloak redirect URIs / web origins; not parameterised |
 | Gateway-to-CRM signing key | random per start | `SHIM_SECRET` env var (set by `start.sh`) |
 | Gateway session idle / max | 30 min / 8 h | `IDLE_MS`, `MAX_MS` in `crm-shim/server.js` |
 | Token lifespan | 5 min | Keycloak admin -> Realm settings -> Tokens |
@@ -247,6 +309,8 @@ Everything is intentionally hard-coded for localhost. Defaults and the places to
 | Lost the authenticator device | Admin console -> Users -> testuser -> Credentials -> delete OTP, add required action "Configure OTP" |
 | `setup-keycloak.sh`: container not running | `./scripts/start-keycloak.sh` first |
 | `docker pull` from quay.io fails | Network or proxy; retry, or set `KEYCLOAK_IMAGE` to a mirror |
+| `resource=` token has no roles / `invalid_scope` | Mapper not installed or scope missing: re-run `./scripts/setup-keycloak-api.sh` (use `--redeploy` to rebuild the jar). Omitting `resource` deliberately yields no roles |
+| Retail API returns 401 for a new client's ID token | Add the client to `RETAIL_SECURITY_ID_AUDIENCES` and `docker compose up -d` |
 | Everything fails after a laptop reboot | Docker may not have restarted Keycloak: `./scripts/start-keycloak.sh && ./scripts/start.sh` |
 
 Run `./scripts/smoke-test.sh` to see exactly which layer is failing.
