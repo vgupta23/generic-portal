@@ -1,0 +1,15 @@
+$kind: http-request
+name: "GET /api/flowers | duns-222222222, resource=\"RETAILUI CRR\" (two roles)"
+description: "Several roles may be requested, space separated; RETAILUI is among them"
+url: "{{baseUrl}}/api/flowers"
+method: GET
+headers:
+  Authorization: "Bearer {{access_a_222_RETAILUI_CRR}}"
+  X-ID-Token: "{{id_a_222_RETAILUI_CRR}}"
+  Accept: "application/json"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 200', function () { pm.response.to.have.status(200); });
+    language: text/javascript
+order: 3000

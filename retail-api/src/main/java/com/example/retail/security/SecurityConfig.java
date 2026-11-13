@@ -59,10 +59,10 @@ class SecurityConfig {
         return http.build();
     }
 
-    /** Access-token claim {@code duns_roles} becomes authorities such as {@code 111111111:RETAILUI}. */
+    /** Access-token DUNS roles (see {@link DunsRoles#fromToken}) become authorities such as {@code 111111111:RETAILUI}. */
     static Converter<Jwt, AbstractAuthenticationToken> dunsConverter() {
         return jwt -> {
-            List<GrantedAuthority> authorities = DunsRoles.parse(jwt.getClaim("duns_roles")).entrySet().stream()
+            List<GrantedAuthority> authorities = DunsRoles.fromToken(jwt).entrySet().stream()
                     .flatMap(e -> e.getValue().stream()
                             .map(role -> (GrantedAuthority) new SimpleGrantedAuthority(
                                     RetailSecurityProperties.authority(e.getKey(), role))))

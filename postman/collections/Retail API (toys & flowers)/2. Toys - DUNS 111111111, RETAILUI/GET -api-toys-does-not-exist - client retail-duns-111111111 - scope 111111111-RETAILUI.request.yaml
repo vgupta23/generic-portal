@@ -1,0 +1,15 @@
+$kind: http-request
+name: "GET /api/toys/does-not-exist | client retail-duns-111111111 | scope 111111111:RETAILUI"
+description: "client retail-duns-111111111 | scope 111111111:RETAILUI (user apiuser) -> /api/toys/does-not-exist"
+url: "{{baseUrl}}/api/toys/does-not-exist"
+method: GET
+headers:
+  Authorization: "Bearer {{access_apiuser_111111111_RETAILUI}}"
+  X-ID-Token: "{{id_apiuser_111111111_RETAILUI}}"
+  Accept: "application/json"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 404', function () { pm.response.to.have.status(404); });
+    language: text/javascript
+order: 3000

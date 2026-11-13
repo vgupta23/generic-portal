@@ -1,0 +1,16 @@
+$kind: http-request
+name: "GET /api/me | duns-222222222, resource=\"RETAILUI CRR\""
+description: "Two roles requested, exactly those two come back (apiuser also holds USA, CRM, DAM_OP)"
+url: "{{baseUrl}}/api/me"
+method: GET
+headers:
+  Authorization: "Bearer {{access_a_222_RETAILUI_CRR}}"
+  X-ID-Token: "{{id_a_222_RETAILUI_CRR}}"
+  Accept: "application/json"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 200', function () { pm.response.to.have.status(200); });
+      pm.test('Exactly RETAILUI and CRR of DUNS 222222222', function () { const r = pm.response.json().dunsRoles; pm.expect(Object.keys(r)).to.eql(['222222222']); pm.expect(r['222222222'].slice().sort()).to.eql(['CRR', 'RETAILUI']); });
+    language: text/javascript
+order: 5000

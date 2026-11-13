@@ -1,0 +1,42 @@
+$kind: http-request
+name: "toyonly | client retail-duns-222222222 | scope 222222222:RETAILUI"
+description: "DUNS 222222222 is selected by the client (retail-duns-222222222 + its own secret). The resource is selected by the scope `222222222:RETAILUI`."
+url: "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token"
+method: POST
+headers:
+  Content-Type: "application/x-www-form-urlencoded"
+body:
+  type: urlencoded
+  content:
+    client_id: "retail-duns-222222222"
+    client_secret: "{{secret_222222222}}"
+    grant_type: "password"
+    username: "toyonly"
+    password: "{{password}}"
+    scope: "openid 222222222:RETAILUI"
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('Keycloak issued tokens to retail-duns-222222222 for toyonly', function () {
+        pm.response.to.have.status(200);
+        pm.expect(body.access_token).to.be.a('string');
+        pm.expect(body.id_token).to.be.a('string');
+        pm.collectionVariables.set('access_toyonly_222222222_RETAILUI', body.access_token);
+        pm.collectionVariables.set('id_toyonly_222222222_RETAILUI', body.id_token);
+      });
+      const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+      pm.test('Token is bound to DUNS 222222222: azp=retail-duns-222222222, duns=222222222', function () {
+        pm.expect(claims.azp).to.eql('retail-duns-222222222');
+        pm.expect(claims.duns).to.eql('222222222');
+      });
+      pm.test('No role is in the token (user lacks RETAILUI on DUNS 222222222)', function () {
+        const ra = claims.resource_access;
+        const expected = undefined;
+        if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }
+        else { pm.expect(ra).to.eql(expected); }
+        pm.expect(claims.duns_roles).to.be.undefined;
+      });
+      console.log('TOKEN toyonly | client retail-duns-222222222 | scope 222222222:RETAILUI | roles in token: ' + JSON.stringify(claims.resource_access));
+    language: text/javascript
+order: 4000

@@ -1,0 +1,47 @@
+$kind: http-request
+name: "apiuser | client retail-duns-111111111 | scope duns-111111111 | resource=RETAILUI"
+description: "DUNS 111111111 is selected by the client (retail-duns-111111111 + its own secret). The scope `duns-111111111` covers ALL roles of that DUNS; the request parameter `resource=RETAILUI` picks which of them is issued."
+url: "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token"
+method: POST
+headers:
+  Content-Type: "application/x-www-form-urlencoded"
+body:
+  type: urlencoded
+  content:
+    client_id: "retail-duns-111111111"
+    client_secret: "{{secret_111111111}}"
+    grant_type: "password"
+    username: "apiuser"
+    password: "{{password}}"
+    scope: "openid duns-111111111"
+    resource: "RETAILUI"
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('Keycloak issued tokens to retail-duns-111111111 for apiuser', function () {
+        pm.response.to.have.status(200);
+        pm.expect(body.access_token).to.be.a('string');
+        pm.expect(body.id_token).to.be.a('string');
+        pm.collectionVariables.set('access_a_111_RETAILUI', body.access_token);
+        pm.collectionVariables.set('id_a_111_RETAILUI', body.id_token);
+      });
+      const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+      pm.test('Token is bound to DUNS 111111111: azp=retail-duns-111111111, duns=111111111', function () {
+        pm.expect(claims.azp).to.eql('retail-duns-111111111');
+        pm.expect(claims.duns).to.eql('111111111');
+      });
+      pm.test('Scope duns-111111111 was granted', function () { pm.expect(claims.scope.split(' ')).to.include('duns-111111111'); });
+      pm.test('only the requested role(s) RETAILUI of DUNS 111111111', function () {
+        const expected = {"duns-111111111": {"roles": ["RETAILUI"]}};
+        const ra = claims.resource_access;
+        if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }
+        else {
+          pm.expect(Object.keys(ra)).to.eql(Object.keys(expected));
+          pm.expect(Object.values(ra)[0].roles.slice().sort()).to.eql(Object.values(expected)[0].roles.slice().sort());
+        }
+        pm.expect(claims.duns_roles).to.be.undefined;
+      });
+      console.log('TOKEN apiuser | client retail-duns-111111111 | scope duns-111111111 | resource=RETAILUI | roles in token: ' + JSON.stringify(claims.resource_access));
+    language: text/javascript
+order: 1000

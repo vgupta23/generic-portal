@@ -1,0 +1,25 @@
+$kind: http-request
+name: "apiuser | refresh_token grant, resource= not repeated -> same single role CRM"
+description: "The role chosen by `resource=` is remembered on the session, so a refresh without `resource` yields the same single role, not all roles of the DUNS."
+url: "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token"
+method: POST
+headers:
+  Content-Type: "application/x-www-form-urlencoded"
+body:
+  type: urlencoded
+  content:
+    client_id: "retail-duns-111111111"
+    client_secret: "{{secret_111111111}}"
+    grant_type: "refresh_token"
+    refresh_token: "{{refresh_a_111_CRM}}"
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('Refresh succeeded', function () { pm.response.to.have.status(200); });
+      const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+      pm.test('Refreshed token keeps the single role CRM of DUNS 111111111 without resending resource=', function () {
+        pm.expect(claims.resource_access).to.eql({"duns-111111111": {"roles": ["CRM"]}});
+      });
+    language: text/javascript
+order: 9000

@@ -1,37 +1,15 @@
 {
   "info": {
     "name": "Retail API (toys & flowers)",
-    "description": "Run with the Collection Runner (top to bottom). Prerequisites: Keycloak running and configured, ./scripts/setup-keycloak-api-test.sh executed, retail-api container running on http://localhost:8090.\n\nThe first folder fetches real tokens from Keycloak; the rest call the API with them.",
+    "description": "Run with the Collection Runner (top to bottom). Prerequisites: Keycloak configured, ./retail-api/scripts/setup-keycloak-api-test.sh then ./retail-api/scripts/setup-keycloak-duns-clients.sh executed, retail-api running on http://localhost:8090.\n\nEvery token request names the DUNS (client_id = retail-duns-<DUNS> plus that client's own client_secret) and the resource (scope = \"openid <DUNS>:<ROLE>\", e.g. \"openid 111111111:RETAILUI\"). Keycloak then returns ONLY that role of that DUNS. Request names show the client and scope used; the console shows which roles each token carries.\n\n| DUNS | Client id | Owns | Scope for RETAILUI |\n|---|---|---|---|\n| 111111111 | retail-duns-111111111 | toys | 111111111:RETAILUI |\n| 222222222 | retail-duns-222222222 | flowers | 222222222:RETAILUI |\n\n## Variant: one scope per DUNS, role chosen by `resource=` (folders 7-9)\n\nThe scope `duns-<DUNS>` contains ALL roles of that DUNS. The token request's `resource` parameter says which role(s) to issue, and a custom Keycloak mapper (keycloak-extensions/resource-role-mapper) removes every other role. Prerequisites: `keycloak-extensions/resource-role-mapper/deploy.sh`, then `retail-api/scripts/setup-keycloak-duns-resource-scopes.sh`.\n\n| DUNS | Client id | Scope | Example request |\n|---|---|---|---|\n| 111111111 | retail-duns-111111111 | duns-111111111 | scope=`openid duns-111111111` resource=`RETAILUI` |\n| 222222222 | retail-duns-222222222 | duns-222222222 | scope=`openid duns-222222222` resource=`RETAILUI CRR` |\n\nNo `resource` means no role. Several roles are space separated (Keycloak rejects a repeated `resource` parameter).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
-  "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:8090"
-    },
-    {
-      "key": "keycloakUrl",
-      "value": "http://localhost:8080"
-    },
-    {
-      "key": "realm",
-      "value": "demo"
-    },
-    {
-      "key": "clientId",
-      "value": "retail-api-test"
-    },
-    {
-      "key": "password",
-      "value": "password"
-    }
-  ],
   "item": [
     {
-      "name": "0. Get tokens from Keycloak",
+      "name": "0. Get tokens (one client per DUNS, one scope per resource)",
       "item": [
         {
-          "name": "Get tokens - apiuser",
+          "name": "apiuser | client retail-duns-111111111 | scope 111111111:RETAILUI",
           "request": {
             "method": "POST",
             "header": [
@@ -40,45 +18,43 @@
                 "value": "application/x-www-form-urlencoded"
               }
             ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 111111111 is selected by the client (retail-duns-111111111 + its own secret). The resource is selected by the scope `111111111:RETAILUI`.",
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
                 {
                   "key": "client_id",
-                  "value": "{{clientId}}"
+                  "value": "retail-duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_111111111}}",
+                  "type": "text"
                 },
                 {
                   "key": "grant_type",
-                  "value": "password"
+                  "value": "password",
+                  "type": "text"
                 },
                 {
                   "key": "username",
-                  "value": "apiuser"
+                  "value": "apiuser",
+                  "type": "text"
                 },
                 {
                   "key": "password",
-                  "value": "{{password}}"
+                  "value": "{{password}}",
+                  "type": "text"
                 },
                 {
                   "key": "scope",
-                  "value": "openid"
+                  "value": "openid 111111111:RETAILUI",
+                  "type": "text"
                 }
               ]
-            },
-            "url": {
-              "raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
-              "host": [
-                "{{keycloakUrl}}"
-              ],
-              "path": [
-                "realms",
-                "{{realm}}",
-                "protocol",
-                "openid-connect",
-                "token"
-              ]
-            },
-            "description": "Password grant against Keycloak (dev-only client retail-api-test). Stores the access and ID token for this user as collection variables."
+            }
           },
           "event": [
             {
@@ -86,26 +62,34 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Keycloak returned tokens for apiuser', function () {",
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-111111111 for apiuser', function () {",
                   "  pm.response.to.have.status(200);",
-                  "  const body = pm.response.json();",
                   "  pm.expect(body.access_token).to.be.a('string');",
                   "  pm.expect(body.id_token).to.be.a('string');",
-                  "  pm.collectionVariables.set('access_apiuser', body.access_token);",
-                  "  pm.collectionVariables.set('id_apiuser', body.id_token);",
+                  "  pm.collectionVariables.set('access_apiuser_111111111_RETAILUI', body.access_token);",
+                  "  pm.collectionVariables.set('id_apiuser_111111111_RETAILUI', body.id_token);",
                   "});",
-                  "pm.test('Access token carries duns_roles and the retail-ui audience', function () {",
-                  "  const claims = JSON.parse(atob(pm.response.json().access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
-                  "  pm.expect(claims.duns_roles).to.be.an('array').that.is.not.empty;",
-                  "  pm.expect(claims.aud).to.include('retail-ui');",
-                  "});"
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 111111111: azp=retail-duns-111111111, duns=111111111', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-111111111');",
+                  "  pm.expect(claims.duns).to.eql('111111111');",
+                  "});",
+                  "pm.test('Only role RETAILUI of DUNS 111111111 is in the token', function () {",
+                  "  const ra = claims.resource_access;",
+                  "  const expected = {\"duns-111111111\": {\"roles\": [\"RETAILUI\"]}};",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else { pm.expect(ra).to.eql(expected); }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN apiuser | client retail-duns-111111111 | scope 111111111:RETAILUI | roles in token: ' + JSON.stringify(claims.resource_access));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Get tokens - toyonly",
+          "name": "apiuser | client retail-duns-222222222 | scope 222222222:RETAILUI",
           "request": {
             "method": "POST",
             "header": [
@@ -114,45 +98,43 @@
                 "value": "application/x-www-form-urlencoded"
               }
             ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 222222222 is selected by the client (retail-duns-222222222 + its own secret). The resource is selected by the scope `222222222:RETAILUI`.",
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
                 {
                   "key": "client_id",
-                  "value": "{{clientId}}"
+                  "value": "retail-duns-222222222",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_222222222}}",
+                  "type": "text"
                 },
                 {
                   "key": "grant_type",
-                  "value": "password"
+                  "value": "password",
+                  "type": "text"
                 },
                 {
                   "key": "username",
-                  "value": "toyonly"
+                  "value": "apiuser",
+                  "type": "text"
                 },
                 {
                   "key": "password",
-                  "value": "{{password}}"
+                  "value": "{{password}}",
+                  "type": "text"
                 },
                 {
                   "key": "scope",
-                  "value": "openid"
+                  "value": "openid 222222222:RETAILUI",
+                  "type": "text"
                 }
               ]
-            },
-            "url": {
-              "raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
-              "host": [
-                "{{keycloakUrl}}"
-              ],
-              "path": [
-                "realms",
-                "{{realm}}",
-                "protocol",
-                "openid-connect",
-                "token"
-              ]
-            },
-            "description": "Password grant against Keycloak (dev-only client retail-api-test). Stores the access and ID token for this user as collection variables."
+            }
           },
           "event": [
             {
@@ -160,26 +142,34 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Keycloak returned tokens for toyonly', function () {",
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-222222222 for apiuser', function () {",
                   "  pm.response.to.have.status(200);",
-                  "  const body = pm.response.json();",
                   "  pm.expect(body.access_token).to.be.a('string');",
                   "  pm.expect(body.id_token).to.be.a('string');",
-                  "  pm.collectionVariables.set('access_toyonly', body.access_token);",
-                  "  pm.collectionVariables.set('id_toyonly', body.id_token);",
+                  "  pm.collectionVariables.set('access_apiuser_222222222_RETAILUI', body.access_token);",
+                  "  pm.collectionVariables.set('id_apiuser_222222222_RETAILUI', body.id_token);",
                   "});",
-                  "pm.test('Access token carries duns_roles and the retail-ui audience', function () {",
-                  "  const claims = JSON.parse(atob(pm.response.json().access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
-                  "  pm.expect(claims.duns_roles).to.be.an('array').that.is.not.empty;",
-                  "  pm.expect(claims.aud).to.include('retail-ui');",
-                  "});"
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 222222222: azp=retail-duns-222222222, duns=222222222', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-222222222');",
+                  "  pm.expect(claims.duns).to.eql('222222222');",
+                  "});",
+                  "pm.test('Only role RETAILUI of DUNS 222222222 is in the token', function () {",
+                  "  const ra = claims.resource_access;",
+                  "  const expected = {\"duns-222222222\": {\"roles\": [\"RETAILUI\"]}};",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else { pm.expect(ra).to.eql(expected); }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN apiuser | client retail-duns-222222222 | scope 222222222:RETAILUI | roles in token: ' + JSON.stringify(claims.resource_access));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Get tokens - noretail",
+          "name": "toyonly | client retail-duns-111111111 | scope 111111111:RETAILUI",
           "request": {
             "method": "POST",
             "header": [
@@ -188,45 +178,43 @@
                 "value": "application/x-www-form-urlencoded"
               }
             ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 111111111 is selected by the client (retail-duns-111111111 + its own secret). The resource is selected by the scope `111111111:RETAILUI`.",
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
                 {
                   "key": "client_id",
-                  "value": "{{clientId}}"
+                  "value": "retail-duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_111111111}}",
+                  "type": "text"
                 },
                 {
                   "key": "grant_type",
-                  "value": "password"
+                  "value": "password",
+                  "type": "text"
                 },
                 {
                   "key": "username",
-                  "value": "noretail"
+                  "value": "toyonly",
+                  "type": "text"
                 },
                 {
                   "key": "password",
-                  "value": "{{password}}"
+                  "value": "{{password}}",
+                  "type": "text"
                 },
                 {
                   "key": "scope",
-                  "value": "openid"
+                  "value": "openid 111111111:RETAILUI",
+                  "type": "text"
                 }
               ]
-            },
-            "url": {
-              "raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
-              "host": [
-                "{{keycloakUrl}}"
-              ],
-              "path": [
-                "realms",
-                "{{realm}}",
-                "protocol",
-                "openid-connect",
-                "token"
-              ]
-            },
-            "description": "Password grant against Keycloak (dev-only client retail-api-test). Stores the access and ID token for this user as collection variables."
+            }
           },
           "event": [
             {
@@ -234,19 +222,427 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Keycloak returned tokens for noretail', function () {",
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-111111111 for toyonly', function () {",
                   "  pm.response.to.have.status(200);",
-                  "  const body = pm.response.json();",
                   "  pm.expect(body.access_token).to.be.a('string');",
                   "  pm.expect(body.id_token).to.be.a('string');",
-                  "  pm.collectionVariables.set('access_noretail', body.access_token);",
-                  "  pm.collectionVariables.set('id_noretail', body.id_token);",
+                  "  pm.collectionVariables.set('access_toyonly_111111111_RETAILUI', body.access_token);",
+                  "  pm.collectionVariables.set('id_toyonly_111111111_RETAILUI', body.id_token);",
                   "});",
-                  "pm.test('Access token carries duns_roles and the retail-ui audience', function () {",
-                  "  const claims = JSON.parse(atob(pm.response.json().access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
-                  "  pm.expect(claims.duns_roles).to.be.an('array').that.is.not.empty;",
-                  "  pm.expect(claims.aud).to.include('retail-ui');",
-                  "});"
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 111111111: azp=retail-duns-111111111, duns=111111111', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-111111111');",
+                  "  pm.expect(claims.duns).to.eql('111111111');",
+                  "});",
+                  "pm.test('Only role RETAILUI of DUNS 111111111 is in the token', function () {",
+                  "  const ra = claims.resource_access;",
+                  "  const expected = {\"duns-111111111\": {\"roles\": [\"RETAILUI\"]}};",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else { pm.expect(ra).to.eql(expected); }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN toyonly | client retail-duns-111111111 | scope 111111111:RETAILUI | roles in token: ' + JSON.stringify(claims.resource_access));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "toyonly | client retail-duns-222222222 | scope 222222222:RETAILUI",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 222222222 is selected by the client (retail-duns-222222222 + its own secret). The resource is selected by the scope `222222222:RETAILUI`.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "retail-duns-222222222",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_222222222}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "toyonly",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid 222222222:RETAILUI",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-222222222 for toyonly', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_toyonly_222222222_RETAILUI', body.access_token);",
+                  "  pm.collectionVariables.set('id_toyonly_222222222_RETAILUI', body.id_token);",
+                  "});",
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 222222222: azp=retail-duns-222222222, duns=222222222', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-222222222');",
+                  "  pm.expect(claims.duns).to.eql('222222222');",
+                  "});",
+                  "pm.test('No role is in the token (user lacks RETAILUI on DUNS 222222222)', function () {",
+                  "  const ra = claims.resource_access;",
+                  "  const expected = undefined;",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else { pm.expect(ra).to.eql(expected); }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN toyonly | client retail-duns-222222222 | scope 222222222:RETAILUI | roles in token: ' + JSON.stringify(claims.resource_access));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "noretail | client retail-duns-111111111 | scope 111111111:RETAILUI",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 111111111 is selected by the client (retail-duns-111111111 + its own secret). The resource is selected by the scope `111111111:RETAILUI`.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "retail-duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_111111111}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "noretail",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid 111111111:RETAILUI",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-111111111 for noretail', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_noretail_111111111_RETAILUI', body.access_token);",
+                  "  pm.collectionVariables.set('id_noretail_111111111_RETAILUI', body.id_token);",
+                  "});",
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 111111111: azp=retail-duns-111111111, duns=111111111', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-111111111');",
+                  "  pm.expect(claims.duns).to.eql('111111111');",
+                  "});",
+                  "pm.test('No role is in the token (user lacks RETAILUI on DUNS 111111111)', function () {",
+                  "  const ra = claims.resource_access;",
+                  "  const expected = undefined;",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else { pm.expect(ra).to.eql(expected); }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN noretail | client retail-duns-111111111 | scope 111111111:RETAILUI | roles in token: ' + JSON.stringify(claims.resource_access));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "noretail | client retail-duns-222222222 | scope 222222222:RETAILUI",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 222222222 is selected by the client (retail-duns-222222222 + its own secret). The resource is selected by the scope `222222222:RETAILUI`.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "retail-duns-222222222",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_222222222}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "noretail",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid 222222222:RETAILUI",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-222222222 for noretail', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_noretail_222222222_RETAILUI', body.access_token);",
+                  "  pm.collectionVariables.set('id_noretail_222222222_RETAILUI', body.id_token);",
+                  "});",
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 222222222: azp=retail-duns-222222222, duns=222222222', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-222222222');",
+                  "  pm.expect(claims.duns).to.eql('222222222');",
+                  "});",
+                  "pm.test('No role is in the token (user lacks RETAILUI on DUNS 222222222)', function () {",
+                  "  const ra = claims.resource_access;",
+                  "  const expected = undefined;",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else { pm.expect(ra).to.eql(expected); }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN noretail | client retail-duns-222222222 | scope 222222222:RETAILUI | roles in token: ' + JSON.stringify(claims.resource_access));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "apiuser | client retail-duns-111111111 | scope 111111111:CRM",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 111111111 is selected by the client (retail-duns-111111111 + its own secret). The resource is selected by the scope `111111111:CRM`.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "retail-duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_111111111}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "apiuser",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid 111111111:CRM",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-111111111 for apiuser', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_apiuser_111111111_CRM', body.access_token);",
+                  "  pm.collectionVariables.set('id_apiuser_111111111_CRM', body.id_token);",
+                  "});",
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 111111111: azp=retail-duns-111111111, duns=111111111', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-111111111');",
+                  "  pm.expect(claims.duns).to.eql('111111111');",
+                  "});",
+                  "pm.test('Only role CRM of DUNS 111111111 is in the token', function () {",
+                  "  const ra = claims.resource_access;",
+                  "  const expected = {\"duns-111111111\": {\"roles\": [\"CRM\"]}};",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else { pm.expect(ra).to.eql(expected); }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN apiuser | client retail-duns-111111111 | scope 111111111:CRM | roles in token: ' + JSON.stringify(claims.resource_access));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "apiuser | client retail-duns-111111111 | no resource scope",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 111111111 client, but no resource scope: Keycloak must return no roles.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "retail-duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_111111111}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "apiuser",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-111111111 for apiuser', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_apiuser_111111111_noscope', body.access_token);",
+                  "  pm.collectionVariables.set('id_apiuser_111111111_noscope', body.id_token);",
+                  "});",
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 111111111: azp=retail-duns-111111111, duns=111111111', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-111111111');",
+                  "  pm.expect(claims.duns).to.eql('111111111');",
+                  "});",
+                  "pm.test('No role is in the token (no resource scope requested)', function () {",
+                  "  const ra = claims.resource_access;",
+                  "  const expected = undefined;",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else { pm.expect(ra).to.eql(expected); }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN apiuser | client retail-duns-111111111 | no resource scope | roles in token: ' + JSON.stringify(claims.resource_access));"
                 ]
               }
             }
@@ -258,7 +654,7 @@
       "name": "1. Health (public)",
       "item": [
         {
-          "name": "GET /actuator/health",
+          "name": "GET /actuator/health (no token)",
           "request": {
             "method": "GET",
             "header": [
@@ -267,16 +663,8 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/actuator/health",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "actuator",
-                "health"
-              ]
-            }
+            "url": "{{baseUrl}}/actuator/health",
+            "description": "Public."
           },
           "event": [
             {
@@ -296,36 +684,28 @@
       ]
     },
     {
-      "name": "2. Toys (apiuser: RETAILUI on both DUNS)",
+      "name": "2. Toys - DUNS 111111111, RETAILUI",
       "item": [
         {
-          "name": "GET /api/toys",
+          "name": "GET /api/toys | client retail-duns-111111111 | scope 111111111:RETAILUI",
           "request": {
             "method": "GET",
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{access_apiuser}}"
+                "value": "Bearer {{access_apiuser_111111111_RETAILUI}}"
               },
               {
                 "key": "X-ID-Token",
-                "value": "{{id_apiuser}}"
+                "value": "{{id_apiuser_111111111_RETAILUI}}"
               },
               {
                 "key": "Accept",
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/toys",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "toys"
-              ]
-            }
+            "url": "{{baseUrl}}/api/toys",
+            "description": "client retail-duns-111111111 | scope 111111111:RETAILUI (user apiuser) -> /api/toys"
           },
           "event": [
             {
@@ -333,14 +713,225 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200 with the Toy Shop catalog', function () {",
-                  "  pm.response.to.have.status(200);",
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Toy catalog of DUNS 111111111', function () { pm.expect(pm.response.json().duns).to.eql('111111111'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/toys/t1 | client retail-duns-111111111 | scope 111111111:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser_111111111_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser_111111111_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys/t1",
+            "description": "client retail-duns-111111111 | scope 111111111:RETAILUI (user apiuser) -> /api/toys/t1"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Teddy Bear', function () { pm.expect(pm.response.json().name).to.eql('Teddy Bear'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/toys/does-not-exist | client retail-duns-111111111 | scope 111111111:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser_111111111_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser_111111111_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys/does-not-exist",
+            "description": "client retail-duns-111111111 | scope 111111111:RETAILUI (user apiuser) -> /api/toys/does-not-exist"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Flowers - DUNS 222222222, RETAILUI",
+      "item": [
+        {
+          "name": "GET /api/flowers | client retail-duns-222222222 | scope 222222222:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser_222222222_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser_222222222_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/flowers",
+            "description": "client retail-duns-222222222 | scope 222222222:RETAILUI (user apiuser) -> /api/flowers"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Flower catalog of DUNS 222222222', function () { pm.expect(pm.response.json().duns).to.eql('222222222'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/flowers/f1 | client retail-duns-222222222 | scope 222222222:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser_222222222_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser_222222222_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/flowers/f1",
+            "description": "client retail-duns-222222222 | scope 222222222:RETAILUI (user apiuser) -> /api/flowers/f1"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/flowers/does-not-exist | client retail-duns-222222222 | scope 222222222:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser_222222222_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser_222222222_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/flowers/does-not-exist",
+            "description": "client retail-duns-222222222 | scope 222222222:RETAILUI (user apiuser) -> /api/flowers/does-not-exist"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Identity echo - exactly one DUNS and one role per token",
+      "item": [
+        {
+          "name": "GET /api/me | client retail-duns-111111111 | scope 111111111:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser_111111111_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser_111111111_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/me",
+            "description": "client retail-duns-111111111 | scope 111111111:RETAILUI (user apiuser) -> /api/me"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Token identity: client retail-duns-111111111, duns 111111111', function () {",
                   "  const b = pm.response.json();",
+                  "  pm.expect(b.clientId).to.eql('retail-duns-111111111');",
                   "  pm.expect(b.duns).to.eql('111111111');",
-                  "  pm.expect(b.company).to.eql('Toy Shop');",
-                  "  pm.expect(b.count).to.eql(6);",
-                  "  pm.expect(b.items).to.have.lengthOf(6);",
-                  "  pm.expect(b.items[0]).to.have.all.keys('id','name','category','price','stock');",
+                  "  pm.expect(b.dunsRoles['111111111']).to.eql(['RETAILUI']);",
+                  "  pm.expect(b.dunsRoles['222222222']).to.be.undefined;",
+                  "  pm.expect(b.scope).to.include('111111111:RETAILUI');",
                   "});"
                 ]
               }
@@ -348,34 +939,25 @@
           ]
         },
         {
-          "name": "GET /api/toys/t1",
+          "name": "GET /api/me | client retail-duns-222222222 | scope 222222222:RETAILUI",
           "request": {
             "method": "GET",
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{access_apiuser}}"
+                "value": "Bearer {{access_apiuser_222222222_RETAILUI}}"
               },
               {
                 "key": "X-ID-Token",
-                "value": "{{id_apiuser}}"
+                "value": "{{id_apiuser_222222222_RETAILUI}}"
               },
               {
                 "key": "Accept",
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/toys/t1",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "toys",
-                "t1"
-              ]
-            }
+            "url": "{{baseUrl}}/api/me",
+            "description": "client retail-duns-222222222 | scope 222222222:RETAILUI (user apiuser) -> /api/me"
           },
           "event": [
             {
@@ -383,249 +965,14 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200 Teddy Bear', function () {",
-                  "  pm.response.to.have.status(200);",
-                  "  pm.expect(pm.response.json().name).to.eql('Teddy Bear');",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET /api/toys/does-not-exist",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_apiuser}}"
-              },
-              {
-                "key": "X-ID-Token",
-                "value": "{{id_apiuser}}"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/toys/does-not-exist",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "toys",
-                "does-not-exist"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('404 not_found', function () {",
-                  "  pm.response.to.have.status(404);",
-                  "  pm.expect(pm.response.json().error).to.eql('not_found');",
-                  "});"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "3. Flowers (apiuser: RETAILUI on both DUNS)",
-      "item": [
-        {
-          "name": "GET /api/flowers",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_apiuser}}"
-              },
-              {
-                "key": "X-ID-Token",
-                "value": "{{id_apiuser}}"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/flowers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "flowers"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('200 with the Flower Shop catalog', function () {",
-                  "  pm.response.to.have.status(200);",
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Token identity: client retail-duns-222222222, duns 222222222', function () {",
                   "  const b = pm.response.json();",
+                  "  pm.expect(b.clientId).to.eql('retail-duns-222222222');",
                   "  pm.expect(b.duns).to.eql('222222222');",
-                  "  pm.expect(b.company).to.eql('Flower Shop');",
-                  "  pm.expect(b.count).to.eql(6);",
-                  "  pm.expect(b.items[0]).to.have.all.keys('id','name','color','price','stock');",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET /api/flowers/f1",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_apiuser}}"
-              },
-              {
-                "key": "X-ID-Token",
-                "value": "{{id_apiuser}}"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/flowers/f1",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "flowers",
-                "f1"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('200 Red Roses', function () {",
-                  "  pm.response.to.have.status(200);",
-                  "  pm.expect(pm.response.json().name).to.eql('Red Roses (dozen)');",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET /api/flowers/does-not-exist",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_apiuser}}"
-              },
-              {
-                "key": "X-ID-Token",
-                "value": "{{id_apiuser}}"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/flowers/does-not-exist",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "flowers",
-                "does-not-exist"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('404 not_found', function () { pm.response.to.have.status(404); });"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "4. Identity echo",
-      "item": [
-        {
-          "name": "GET /api/me",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_apiuser}}"
-              },
-              {
-                "key": "X-ID-Token",
-                "value": "{{id_apiuser}}"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/me",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "me"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Custom claims are read from the verified tokens', function () {",
-                  "  pm.response.to.have.status(200);",
-                  "  const b = pm.response.json();",
-                  "  pm.expect(b.username).to.eql('apiuser');",
-                  "  pm.expect(b.department).to.eql('QA');",
-                  "  pm.expect(b.dunsRoles['111111111']).to.include('RETAILUI');",
-                  "  pm.expect(b.dunsRoles['222222222']).to.include('RETAILUI');",
-                  "  pm.expect(b.accessTokenAudience).to.include('retail-ui');",
-                  "  pm.expect(b.idTokenAudience).to.include('retail-api-test');",
+                  "  pm.expect(b.dunsRoles['222222222']).to.eql(['RETAILUI']);",
+                  "  pm.expect(b.dunsRoles['111111111']).to.be.undefined;",
+                  "  pm.expect(b.scope).to.include('222222222:RETAILUI');",
                   "});"
                 ]
               }
@@ -647,16 +994,8 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/toys",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "toys"
-              ]
-            }
+            "url": "{{baseUrl}}/api/toys",
+            "description": "Toys without any token"
           },
           "event": [
             {
@@ -677,46 +1016,7 @@
           ]
         },
         {
-          "name": "Flowers without any token",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/flowers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "flowers"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
-                  "pm.test('Body is a JSON access_denied error', function () {",
-                  "  const b = pm.response.json();",
-                  "  pm.expect(b.error).to.eql('access_denied');",
-                  "  pm.expect(b.status).to.eql(401);",
-                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Garbage bearer token",
+          "name": "Toys with garbage bearer token",
           "request": {
             "method": "GET",
             "header": [
@@ -726,23 +1026,15 @@
               },
               {
                 "key": "X-ID-Token",
-                "value": "{{id_apiuser}}"
+                "value": "{{id_apiuser_111111111_RETAILUI}}"
               },
               {
                 "key": "Accept",
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/toys",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "toys"
-              ]
-            }
+            "url": "{{baseUrl}}/api/toys",
+            "description": "Toys with garbage bearer token"
           },
           "event": [
             {
@@ -763,33 +1055,179 @@
           ]
         },
         {
-          "name": "Access token with tampered signature",
+          "name": "Toys, access token only (ID token missing) | client retail-duns-111111111 | scope 111111111:RETAILUI",
           "request": {
             "method": "GET",
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{access_apiuser}}"
-              },
-              {
-                "key": "X-ID-Token",
-                "value": "{{id_apiuser}}"
+                "value": "Bearer {{access_apiuser_111111111_RETAILUI}}"
               },
               {
                 "key": "Accept",
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/toys",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "toys"
-              ]
+            "url": "{{baseUrl}}/api/toys",
+            "description": "Toys, access token only (ID token missing) | client retail-duns-111111111 | scope 111111111:RETAILUI"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(401);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(b.message).to.include(\"ID token missing\");",
+                  "});"
+                ]
+              }
             }
+          ]
+        },
+        {
+          "name": "Toys, garbage ID token | client retail-duns-111111111 | scope 111111111:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser_111111111_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "garbage"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys",
+            "description": "Toys, garbage ID token | client retail-duns-111111111 | scope 111111111:RETAILUI"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(401);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Toys, ID token of a different user (noretail) | client retail-duns-111111111 | scope 111111111:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser_111111111_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_noretail_111111111_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys",
+            "description": "Toys, ID token of a different user (noretail) | client retail-duns-111111111 | scope 111111111:RETAILUI"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(401);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(b.message).to.include(\"same user\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Toys, ID token used as access token (wrong audience) | client retail-duns-111111111 | scope 111111111:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{id_apiuser_111111111_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser_111111111_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys",
+            "description": "Toys, ID token used as access token (wrong audience) | client retail-duns-111111111 | scope 111111111:RETAILUI"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(401);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Toys, access token with tampered signature | client retail-duns-111111111 | scope 111111111:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser_111111111_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser_111111111_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys",
+            "description": "Toys, access token with tampered signature | client retail-duns-111111111 | scope 111111111:RETAILUI"
           },
           "event": [
             {
@@ -797,7 +1235,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const parts = pm.collectionVariables.get('access_apiuser').split('.');",
+                  "const parts = pm.collectionVariables.get('access_apiuser_111111111_RETAILUI').split('.');",
                   "const sig = parts[2];",
                   "const mid = Math.floor(sig.length / 2);",
                   "parts[2] = sig.slice(0, mid) + (sig[mid] === 'A' ? 'B' : 'A') + sig.slice(mid + 1);  // still valid base64, wrong signature",
@@ -816,194 +1254,7 @@
                   "  pm.expect(b.error).to.eql('access_denied');",
                   "  pm.expect(b.status).to.eql(401);",
                   "  pm.expect(b.message).to.be.a('string').and.not.empty;",
-                  "  pm.expect(b.message).to.include('Invalid signature');",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Access token only (ID token missing)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_apiuser}}"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/toys",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "toys"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
-                  "pm.test('Body is a JSON access_denied error', function () {",
-                  "  const b = pm.response.json();",
-                  "  pm.expect(b.error).to.eql('access_denied');",
-                  "  pm.expect(b.status).to.eql(401);",
-                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
-                  "  pm.expect(b.message).to.include('ID token missing');",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Garbage ID token",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_apiuser}}"
-              },
-              {
-                "key": "X-ID-Token",
-                "value": "not-a-jwt"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/toys",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "toys"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
-                  "pm.test('Body is a JSON access_denied error', function () {",
-                  "  const b = pm.response.json();",
-                  "  pm.expect(b.error).to.eql('access_denied');",
-                  "  pm.expect(b.status).to.eql(401);",
-                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
-                  "  pm.expect(b.message).to.include('invalid ID token');",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "ID token of a different user",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_apiuser}}"
-              },
-              {
-                "key": "X-ID-Token",
-                "value": "{{id_noretail}}"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/toys",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "toys"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
-                  "pm.test('Body is a JSON access_denied error', function () {",
-                  "  const b = pm.response.json();",
-                  "  pm.expect(b.error).to.eql('access_denied');",
-                  "  pm.expect(b.status).to.eql(401);",
-                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
-                  "  pm.expect(b.message).to.include('same user');",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "ID token used as access token (wrong audience)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{id_apiuser}}"
-              },
-              {
-                "key": "X-ID-Token",
-                "value": "{{id_apiuser}}"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/toys",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "toys"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
-                  "pm.test('Body is a JSON access_denied error', function () {",
-                  "  const b = pm.response.json();",
-                  "  pm.expect(b.error).to.eql('access_denied');",
-                  "  pm.expect(b.status).to.eql(401);",
-                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(b.message).to.include(\"Invalid signature\");",
                   "});"
                 ]
               }
@@ -1013,36 +1264,28 @@
       ]
     },
     {
-      "name": "6. Access denied - RETAILUI role missing (403)",
+      "name": "6. Access denied - wrong DUNS, wrong resource or no role (403)",
       "item": [
         {
-          "name": "noretail: toys",
+          "name": "GET /api/flowers | client retail-duns-111111111 | scope 111111111:RETAILUI",
           "request": {
             "method": "GET",
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{access_noretail}}"
+                "value": "Bearer {{access_apiuser_111111111_RETAILUI}}"
               },
               {
                 "key": "X-ID-Token",
-                "value": "{{id_noretail}}"
+                "value": "{{id_apiuser_111111111_RETAILUI}}"
               },
               {
                 "key": "Accept",
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/toys",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "toys"
-              ]
-            }
+            "url": "{{baseUrl}}/api/flowers",
+            "description": "client retail-duns-111111111 | scope 111111111:RETAILUI (user apiuser) -> /api/flowers"
           },
           "event": [
             {
@@ -1051,103 +1294,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
-                  "pm.test('Body is a JSON access_denied error', function () {",
-                  "  const b = pm.response.json();",
-                  "  pm.expect(b.error).to.eql('access_denied');",
-                  "  pm.expect(b.status).to.eql(403);",
-                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
-                  "  pm.expect(b.message).to.include('RETAILUI');",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "noretail: flowers",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_noretail}}"
-              },
-              {
-                "key": "X-ID-Token",
-                "value": "{{id_noretail}}"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/flowers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "flowers"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
-                  "pm.test('Body is a JSON access_denied error', function () {",
-                  "  const b = pm.response.json();",
-                  "  pm.expect(b.error).to.eql('access_denied');",
-                  "  pm.expect(b.status).to.eql(403);",
-                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
-                  "  pm.expect(b.message).to.include('RETAILUI');",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "noretail: /api/me",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_noretail}}"
-              },
-              {
-                "key": "X-ID-Token",
-                "value": "{{id_noretail}}"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/me",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "me"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
-                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "pm.test('Denied because: token is for DUNS 111111111; flowers are owned by DUNS 222222222', function () { pm.expect(pm.response.json().message).to.include('RETAILUI'); });pm.test('Body is a JSON access_denied error', function () {",
                   "  const b = pm.response.json();",
                   "  pm.expect(b.error).to.eql('access_denied');",
                   "  pm.expect(b.status).to.eql(403);",
@@ -1159,74 +1306,25 @@
           ]
         },
         {
-          "name": "toyonly: toys (RETAILUI on 111111111) is allowed",
+          "name": "GET /api/toys | client retail-duns-222222222 | scope 222222222:RETAILUI",
           "request": {
             "method": "GET",
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{access_toyonly}}"
+                "value": "Bearer {{access_apiuser_222222222_RETAILUI}}"
               },
               {
                 "key": "X-ID-Token",
-                "value": "{{id_toyonly}}"
+                "value": "{{id_apiuser_222222222_RETAILUI}}"
               },
               {
                 "key": "Accept",
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/toys",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "toys"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('200', function () { pm.response.to.have.status(200); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "toyonly: flowers (no RETAILUI on 222222222)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_toyonly}}"
-              },
-              {
-                "key": "X-ID-Token",
-                "value": "{{id_toyonly}}"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/flowers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "flowers"
-              ]
-            }
+            "url": "{{baseUrl}}/api/toys",
+            "description": "client retail-duns-222222222 | scope 222222222:RETAILUI (user apiuser) -> /api/toys"
           },
           "event": [
             {
@@ -1235,12 +1333,1047 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
-                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "pm.test('Denied because: token is for DUNS 222222222; toys are owned by DUNS 111111111', function () { pm.expect(pm.response.json().message).to.include('RETAILUI'); });pm.test('Body is a JSON access_denied error', function () {",
                   "  const b = pm.response.json();",
                   "  pm.expect(b.error).to.eql('access_denied');",
                   "  pm.expect(b.status).to.eql(403);",
                   "  pm.expect(b.message).to.be.a('string').and.not.empty;",
-                  "  pm.expect(b.message).to.include('DUNS 222222222');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/toys | client retail-duns-111111111 | scope 111111111:CRM",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser_111111111_CRM}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser_111111111_CRM}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys",
+            "description": "client retail-duns-111111111 | scope 111111111:CRM (user apiuser) -> /api/toys"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Denied because: scope 111111111:CRM puts only CRM in the token, not RETAILUI', function () { pm.expect(pm.response.json().message).to.include('RETAILUI'); });pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/toys | client retail-duns-111111111 | no resource scope",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_apiuser_111111111_noscope}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_apiuser_111111111_noscope}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys",
+            "description": "client retail-duns-111111111 | no resource scope (user apiuser) -> /api/toys"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Denied because: no resource scope requested, so no roles in the token', function () { pm.expect(pm.response.json().message).to.include('RETAILUI'); });pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/flowers | client retail-duns-222222222 | scope 222222222:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_toyonly_222222222_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_toyonly_222222222_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/flowers",
+            "description": "client retail-duns-222222222 | scope 222222222:RETAILUI (user toyonly) -> /api/flowers"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Denied because: toyonly has no RETAILUI on DUNS 222222222, so the scope yields no role', function () { pm.expect(pm.response.json().message).to.include('RETAILUI'); });pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/toys | client retail-duns-111111111 | scope 111111111:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_noretail_111111111_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_noretail_111111111_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys",
+            "description": "client retail-duns-111111111 | scope 111111111:RETAILUI (user noretail) -> /api/toys"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Denied because: noretail has no RETAILUI on DUNS 111111111', function () { pm.expect(pm.response.json().message).to.include('RETAILUI'); });pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/flowers | client retail-duns-222222222 | scope 222222222:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_noretail_222222222_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_noretail_222222222_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/flowers",
+            "description": "client retail-duns-222222222 | scope 222222222:RETAILUI (user noretail) -> /api/flowers"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Denied because: noretail has no RETAILUI on DUNS 222222222', function () { pm.expect(pm.response.json().message).to.include('RETAILUI'); });pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/me | client retail-duns-111111111 | scope 111111111:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_noretail_111111111_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_noretail_111111111_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/me",
+            "description": "client retail-duns-111111111 | scope 111111111:RETAILUI (user noretail) -> /api/me"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Denied because: RETAILUI is needed under some DUNS', function () { pm.expect(pm.response.json().message).to.include('RETAILUI'); });pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/toys | client retail-duns-111111111 | scope 111111111:RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_toyonly_111111111_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_toyonly_111111111_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys",
+            "description": "client retail-duns-111111111 | scope 111111111:RETAILUI (user toyonly) -> /api/toys"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('toyonly may read toys with its DUNS 111111111 RETAILUI token', function () { pm.expect(pm.response.json().duns).to.eql('111111111'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Get tokens (one scope per DUNS, role chosen by resource=)",
+      "item": [
+        {
+          "name": "apiuser | client retail-duns-111111111 | scope duns-111111111 | resource=RETAILUI",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 111111111 is selected by the client (retail-duns-111111111 + its own secret). The scope `duns-111111111` covers ALL roles of that DUNS; the request parameter `resource=RETAILUI` picks which of them is issued.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "retail-duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_111111111}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "apiuser",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "resource",
+                  "value": "RETAILUI",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-111111111 for apiuser', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_a_111_RETAILUI', body.access_token);",
+                  "  pm.collectionVariables.set('id_a_111_RETAILUI', body.id_token);",
+                  "});",
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 111111111: azp=retail-duns-111111111, duns=111111111', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-111111111');",
+                  "  pm.expect(claims.duns).to.eql('111111111');",
+                  "});",
+                  "pm.test('Scope duns-111111111 was granted', function () { pm.expect(claims.scope.split(' ')).to.include('duns-111111111'); });",
+                  "pm.test('only the requested role(s) RETAILUI of DUNS 111111111', function () {",
+                  "  const expected = {\"duns-111111111\": {\"roles\": [\"RETAILUI\"]}};",
+                  "  const ra = claims.resource_access;",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else {",
+                  "    pm.expect(Object.keys(ra)).to.eql(Object.keys(expected));",
+                  "    pm.expect(Object.values(ra)[0].roles.slice().sort()).to.eql(Object.values(expected)[0].roles.slice().sort());",
+                  "  }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN apiuser | client retail-duns-111111111 | scope duns-111111111 | resource=RETAILUI | roles in token: ' + JSON.stringify(claims.resource_access));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "apiuser | client retail-duns-111111111 | scope duns-111111111 | resource=CRM",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 111111111 is selected by the client (retail-duns-111111111 + its own secret). The scope `duns-111111111` covers ALL roles of that DUNS; the request parameter `resource=CRM` picks which of them is issued.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "retail-duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_111111111}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "apiuser",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "resource",
+                  "value": "CRM",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-111111111 for apiuser', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_a_111_CRM', body.access_token);",
+                  "  pm.collectionVariables.set('id_a_111_CRM', body.id_token);",
+                  "  pm.collectionVariables.set('refresh_a_111_CRM', body.refresh_token);",
+                  "});",
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 111111111: azp=retail-duns-111111111, duns=111111111', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-111111111');",
+                  "  pm.expect(claims.duns).to.eql('111111111');",
+                  "});",
+                  "pm.test('Scope duns-111111111 was granted', function () { pm.expect(claims.scope.split(' ')).to.include('duns-111111111'); });",
+                  "pm.test('only the requested role(s) CRM of DUNS 111111111', function () {",
+                  "  const expected = {\"duns-111111111\": {\"roles\": [\"CRM\"]}};",
+                  "  const ra = claims.resource_access;",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else {",
+                  "    pm.expect(Object.keys(ra)).to.eql(Object.keys(expected));",
+                  "    pm.expect(Object.values(ra)[0].roles.slice().sort()).to.eql(Object.values(expected)[0].roles.slice().sort());",
+                  "  }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN apiuser | client retail-duns-111111111 | scope duns-111111111 | resource=CRM | roles in token: ' + JSON.stringify(claims.resource_access));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "apiuser | client retail-duns-222222222 | scope duns-222222222 | resource=RETAILUI",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 222222222 is selected by the client (retail-duns-222222222 + its own secret). The scope `duns-222222222` covers ALL roles of that DUNS; the request parameter `resource=RETAILUI` picks which of them is issued.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "retail-duns-222222222",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_222222222}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "apiuser",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid duns-222222222",
+                  "type": "text"
+                },
+                {
+                  "key": "resource",
+                  "value": "RETAILUI",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-222222222 for apiuser', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_a_222_RETAILUI', body.access_token);",
+                  "  pm.collectionVariables.set('id_a_222_RETAILUI', body.id_token);",
+                  "});",
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 222222222: azp=retail-duns-222222222, duns=222222222', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-222222222');",
+                  "  pm.expect(claims.duns).to.eql('222222222');",
+                  "});",
+                  "pm.test('Scope duns-222222222 was granted', function () { pm.expect(claims.scope.split(' ')).to.include('duns-222222222'); });",
+                  "pm.test('only the requested role(s) RETAILUI of DUNS 222222222', function () {",
+                  "  const expected = {\"duns-222222222\": {\"roles\": [\"RETAILUI\"]}};",
+                  "  const ra = claims.resource_access;",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else {",
+                  "    pm.expect(Object.keys(ra)).to.eql(Object.keys(expected));",
+                  "    pm.expect(Object.values(ra)[0].roles.slice().sort()).to.eql(Object.values(expected)[0].roles.slice().sort());",
+                  "  }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN apiuser | client retail-duns-222222222 | scope duns-222222222 | resource=RETAILUI | roles in token: ' + JSON.stringify(claims.resource_access));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "apiuser | client retail-duns-222222222 | scope duns-222222222 | resource=RETAILUI CRR",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 222222222 is selected by the client (retail-duns-222222222 + its own secret). The scope `duns-222222222` covers ALL roles of that DUNS; the request parameter `resource=RETAILUI CRR` picks which of them is issued.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "retail-duns-222222222",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_222222222}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "apiuser",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid duns-222222222",
+                  "type": "text"
+                },
+                {
+                  "key": "resource",
+                  "value": "RETAILUI CRR",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-222222222 for apiuser', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_a_222_RETAILUI_CRR', body.access_token);",
+                  "  pm.collectionVariables.set('id_a_222_RETAILUI_CRR', body.id_token);",
+                  "});",
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 222222222: azp=retail-duns-222222222, duns=222222222', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-222222222');",
+                  "  pm.expect(claims.duns).to.eql('222222222');",
+                  "});",
+                  "pm.test('Scope duns-222222222 was granted', function () { pm.expect(claims.scope.split(' ')).to.include('duns-222222222'); });",
+                  "pm.test('only the requested role(s) RETAILUI, CRR of DUNS 222222222', function () {",
+                  "  const expected = {\"duns-222222222\": {\"roles\": [\"RETAILUI\", \"CRR\"]}};",
+                  "  const ra = claims.resource_access;",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else {",
+                  "    pm.expect(Object.keys(ra)).to.eql(Object.keys(expected));",
+                  "    pm.expect(Object.values(ra)[0].roles.slice().sort()).to.eql(Object.values(expected)[0].roles.slice().sort());",
+                  "  }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN apiuser | client retail-duns-222222222 | scope duns-222222222 | resource=RETAILUI CRR | roles in token: ' + JSON.stringify(claims.resource_access));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "apiuser | client retail-duns-111111111 | scope duns-111111111 | resource=(none)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 111111111 is selected by the client (retail-duns-111111111 + its own secret). The scope `duns-111111111` covers ALL roles of that DUNS; no `resource` parameter is sent, so no role is issued.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "retail-duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_111111111}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "apiuser",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid duns-111111111",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-111111111 for apiuser', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_a_111_noresource', body.access_token);",
+                  "  pm.collectionVariables.set('id_a_111_noresource', body.id_token);",
+                  "});",
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 111111111: azp=retail-duns-111111111, duns=111111111', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-111111111');",
+                  "  pm.expect(claims.duns).to.eql('111111111');",
+                  "});",
+                  "pm.test('Scope duns-111111111 was granted', function () { pm.expect(claims.scope.split(' ')).to.include('duns-111111111'); });",
+                  "pm.test('no resource= given -> no roles', function () {",
+                  "  const expected = undefined;",
+                  "  const ra = claims.resource_access;",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else {",
+                  "    pm.expect(Object.keys(ra)).to.eql(Object.keys(expected));",
+                  "    pm.expect(Object.values(ra)[0].roles.slice().sort()).to.eql(Object.values(expected)[0].roles.slice().sort());",
+                  "  }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN apiuser | client retail-duns-111111111 | scope duns-111111111 | resource=(none) | roles in token: ' + JSON.stringify(claims.resource_access));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "apiuser | client retail-duns-111111111 | scope duns-111111111 | resource=NOPE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 111111111 is selected by the client (retail-duns-111111111 + its own secret). The scope `duns-111111111` covers ALL roles of that DUNS; the request parameter `resource=NOPE` picks which of them is issued.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "retail-duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_111111111}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "apiuser",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "resource",
+                  "value": "NOPE",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-111111111 for apiuser', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_a_111_NOPE', body.access_token);",
+                  "  pm.collectionVariables.set('id_a_111_NOPE', body.id_token);",
+                  "});",
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 111111111: azp=retail-duns-111111111, duns=111111111', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-111111111');",
+                  "  pm.expect(claims.duns).to.eql('111111111');",
+                  "});",
+                  "pm.test('Scope duns-111111111 was granted', function () { pm.expect(claims.scope.split(' ')).to.include('duns-111111111'); });",
+                  "pm.test('NOPE is not a role apiuser holds under DUNS 111111111 -> no roles', function () {",
+                  "  const expected = undefined;",
+                  "  const ra = claims.resource_access;",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else {",
+                  "    pm.expect(Object.keys(ra)).to.eql(Object.keys(expected));",
+                  "    pm.expect(Object.values(ra)[0].roles.slice().sort()).to.eql(Object.values(expected)[0].roles.slice().sort());",
+                  "  }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN apiuser | client retail-duns-111111111 | scope duns-111111111 | resource=NOPE | roles in token: ' + JSON.stringify(claims.resource_access));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "noretail | client retail-duns-111111111 | scope duns-111111111 | resource=RETAILUI",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 111111111 is selected by the client (retail-duns-111111111 + its own secret). The scope `duns-111111111` covers ALL roles of that DUNS; the request parameter `resource=RETAILUI` picks which of them is issued.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "retail-duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_111111111}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "noretail",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "resource",
+                  "value": "RETAILUI",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-111111111 for noretail', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_n_111_RETAILUI', body.access_token);",
+                  "  pm.collectionVariables.set('id_n_111_RETAILUI', body.id_token);",
+                  "});",
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 111111111: azp=retail-duns-111111111, duns=111111111', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-111111111');",
+                  "  pm.expect(claims.duns).to.eql('111111111');",
+                  "});",
+                  "pm.test('Scope duns-111111111 was granted', function () { pm.expect(claims.scope.split(' ')).to.include('duns-111111111'); });",
+                  "pm.test('RETAILUI is not a role noretail holds under DUNS 111111111 -> no roles', function () {",
+                  "  const expected = undefined;",
+                  "  const ra = claims.resource_access;",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else {",
+                  "    pm.expect(Object.keys(ra)).to.eql(Object.keys(expected));",
+                  "    pm.expect(Object.values(ra)[0].roles.slice().sort()).to.eql(Object.values(expected)[0].roles.slice().sort());",
+                  "  }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN noretail | client retail-duns-111111111 | scope duns-111111111 | resource=RETAILUI | roles in token: ' + JSON.stringify(claims.resource_access));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "toyonly | client retail-duns-222222222 | scope duns-222222222 | resource=RETAILUI",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "DUNS 222222222 is selected by the client (retail-duns-222222222 + its own secret). The scope `duns-222222222` covers ALL roles of that DUNS; the request parameter `resource=RETAILUI` picks which of them is issued.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "retail-duns-222222222",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_222222222}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "toyonly",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid duns-222222222",
+                  "type": "text"
+                },
+                {
+                  "key": "resource",
+                  "value": "RETAILUI",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Keycloak issued tokens to retail-duns-222222222 for toyonly', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  pm.expect(body.id_token).to.be.a('string');",
+                  "  pm.collectionVariables.set('access_t_222_RETAILUI', body.access_token);",
+                  "  pm.collectionVariables.set('id_t_222_RETAILUI', body.id_token);",
+                  "});",
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Token is bound to DUNS 222222222: azp=retail-duns-222222222, duns=222222222', function () {",
+                  "  pm.expect(claims.azp).to.eql('retail-duns-222222222');",
+                  "  pm.expect(claims.duns).to.eql('222222222');",
+                  "});",
+                  "pm.test('Scope duns-222222222 was granted', function () { pm.expect(claims.scope.split(' ')).to.include('duns-222222222'); });",
+                  "pm.test('RETAILUI is not a role toyonly holds under DUNS 222222222 -> no roles', function () {",
+                  "  const expected = undefined;",
+                  "  const ra = claims.resource_access;",
+                  "  if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }",
+                  "  else {",
+                  "    pm.expect(Object.keys(ra)).to.eql(Object.keys(expected));",
+                  "    pm.expect(Object.values(ra)[0].roles.slice().sort()).to.eql(Object.values(expected)[0].roles.slice().sort());",
+                  "  }",
+                  "  pm.expect(claims.duns_roles).to.be.undefined;",
+                  "});",
+                  "console.log('TOKEN toyonly | client retail-duns-222222222 | scope duns-222222222 | resource=RETAILUI | roles in token: ' + JSON.stringify(claims.resource_access));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "apiuser | refresh_token grant, resource= not repeated -> same single role CRM",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "The role chosen by `resource=` is remembered on the session, so a refresh without `resource` yields the same single role, not all roles of the DUNS.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "retail-duns-111111111",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{secret_111111111}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{refresh_a_111_CRM}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Refresh succeeded', function () { pm.response.to.have.status(200); });",
+                  "const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "pm.test('Refreshed token keeps the single role CRM of DUNS 111111111 without resending resource=', function () {",
+                  "  pm.expect(claims.resource_access).to.eql({\"duns-111111111\": {\"roles\": [\"CRM\"]}});",
                   "});"
                 ]
               }
@@ -1248,6 +2381,657 @@
           ]
         }
       ]
+    },
+    {
+      "name": "8. Happy paths with resource= tokens (200)",
+      "item": [
+        {
+          "name": "GET /api/toys | duns-111111111, resource=RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_a_111_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_a_111_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys",
+            "description": "One scope for DUNS 111111111, resource=RETAILUI -> toys readable"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Toy catalog of DUNS 111111111', function () { pm.expect(pm.response.json().duns).to.eql('111111111'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/flowers | duns-222222222, resource=RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_a_222_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_a_222_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/flowers",
+            "description": "One scope for DUNS 222222222, resource=RETAILUI -> flowers readable"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Flower catalog of DUNS 222222222', function () { pm.expect(pm.response.json().duns).to.eql('222222222'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/flowers | duns-222222222, resource=\"RETAILUI CRR\" (two roles)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_a_222_RETAILUI_CRR}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_a_222_RETAILUI_CRR}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/flowers",
+            "description": "Several roles may be requested, space separated; RETAILUI is among them"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/me | duns-111111111, resource=RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_a_111_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_a_111_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/me",
+            "description": "Identity echo: exactly one DUNS and one role, although apiuser holds USA, RETAILUI, CRM there"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Exactly RETAILUI of DUNS 111111111', function () { pm.expect(pm.response.json().dunsRoles).to.eql({'111111111': ['RETAILUI']}); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/me | duns-222222222, resource=\"RETAILUI CRR\"",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_a_222_RETAILUI_CRR}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_a_222_RETAILUI_CRR}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/me",
+            "description": "Two roles requested, exactly those two come back (apiuser also holds USA, CRM, DAM_OP)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Exactly RETAILUI and CRR of DUNS 222222222', function () { const r = pm.response.json().dunsRoles; pm.expect(Object.keys(r)).to.eql(['222222222']); pm.expect(r['222222222'].slice().sort()).to.eql(['CRR', 'RETAILUI']); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "9. Access denied with resource= tokens (403)",
+      "item": [
+        {
+          "name": "GET /api/toys | apiuser, duns-111111111, resource=CRM",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_a_111_CRM}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_a_111_CRM}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys",
+            "description": "Resource CRM was requested, so the token has no RETAILUI -> toys denied"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Denied because RETAILUI is missing', function () { pm.expect(pm.response.json().message).to.include('RETAILUI'); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/me | apiuser, duns-111111111, resource=CRM",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_a_111_CRM}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_a_111_CRM}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/me",
+            "description": "/api/me needs RETAILUI under some DUNS; a CRM-only token has none"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/toys | apiuser, duns-111111111, resource=(none)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_a_111_noresource}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_a_111_noresource}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys",
+            "description": "Scope without resource= -> deny by default, no role in the token"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/toys | apiuser, duns-111111111, resource=NOPE",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_a_111_NOPE}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_a_111_NOPE}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys",
+            "description": "resource= names a role that does not exist -> no role in the token"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/toys | noretail, duns-111111111, resource=RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_n_111_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_n_111_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys",
+            "description": "noretail asks for RETAILUI but does not hold it; the filter only removes, it never adds -> denied"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/flowers | apiuser, duns-111111111, resource=RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_a_111_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_a_111_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/flowers",
+            "description": "RETAILUI of DUNS 111111111 does not open the flowers (owned by DUNS 222222222)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Denied because: token is for DUNS 111111111; flowers are owned by DUNS 222222222', function () { pm.expect(pm.response.json().message).to.include('RETAILUI'); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/toys | apiuser, duns-222222222, resource=RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_a_222_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_a_222_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/toys",
+            "description": "RETAILUI of DUNS 222222222 does not open the toys (owned by DUNS 111111111)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/flowers | toyonly, duns-222222222, resource=RETAILUI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_t_222_RETAILUI}}"
+              },
+              {
+                "key": "X-ID-Token",
+                "value": "{{id_t_222_RETAILUI}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/flowers",
+            "description": "toyonly has no RETAILUI under DUNS 222222222 -> flowers denied"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Body is a JSON access_denied error', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.eql('access_denied');",
+                  "  pm.expect(b.status).to.eql(403);",
+                  "  pm.expect(b.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8090"
+    },
+    {
+      "key": "keycloakUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "realm",
+      "value": "demo"
+    },
+    {
+      "key": "password",
+      "value": "password"
+    },
+    {
+      "key": "secret_111111111",
+      "value": "retail-duns-111111111-secret"
+    },
+    {
+      "key": "secret_222222222",
+      "value": "retail-duns-222222222-secret"
+    },
+    {
+      "key": "access_apiuser_111111111_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "id_apiuser_111111111_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "access_apiuser_222222222_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "id_apiuser_222222222_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "access_toyonly_111111111_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "id_toyonly_111111111_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "access_toyonly_222222222_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "id_toyonly_222222222_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "access_noretail_111111111_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "id_noretail_111111111_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "access_noretail_222222222_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "id_noretail_222222222_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "access_apiuser_111111111_CRM",
+      "value": ""
+    },
+    {
+      "key": "id_apiuser_111111111_CRM",
+      "value": ""
+    },
+    {
+      "key": "access_apiuser_111111111_noscope",
+      "value": ""
+    },
+    {
+      "key": "id_apiuser_111111111_noscope",
+      "value": ""
+    },
+    {
+      "key": "access_a_111_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "id_a_111_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "access_a_111_CRM",
+      "value": ""
+    },
+    {
+      "key": "id_a_111_CRM",
+      "value": ""
+    },
+    {
+      "key": "access_a_222_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "id_a_222_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "access_a_222_RETAILUI_CRR",
+      "value": ""
+    },
+    {
+      "key": "id_a_222_RETAILUI_CRR",
+      "value": ""
+    },
+    {
+      "key": "access_a_111_noresource",
+      "value": ""
+    },
+    {
+      "key": "id_a_111_noresource",
+      "value": ""
+    },
+    {
+      "key": "access_a_111_NOPE",
+      "value": ""
+    },
+    {
+      "key": "id_a_111_NOPE",
+      "value": ""
+    },
+    {
+      "key": "access_n_111_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "id_n_111_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "access_t_222_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "id_t_222_RETAILUI",
+      "value": ""
+    },
+    {
+      "key": "refresh_a_111_CRM",
+      "value": ""
     }
   ]
 }

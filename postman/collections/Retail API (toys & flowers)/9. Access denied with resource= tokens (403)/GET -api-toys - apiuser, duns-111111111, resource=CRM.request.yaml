@@ -1,0 +1,22 @@
+$kind: http-request
+name: "GET /api/toys | apiuser, duns-111111111, resource=CRM"
+description: "Resource CRM was requested, so the token has no RETAILUI -> toys denied"
+url: "{{baseUrl}}/api/toys"
+method: GET
+headers:
+  Authorization: "Bearer {{access_a_111_CRM}}"
+  X-ID-Token: "{{id_a_111_CRM}}"
+  Accept: "application/json"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 403', function () { pm.response.to.have.status(403); });
+      pm.test('Denied because RETAILUI is missing', function () { pm.expect(pm.response.json().message).to.include('RETAILUI'); });
+      pm.test('Body is a JSON access_denied error', function () {
+        const b = pm.response.json();
+        pm.expect(b.error).to.eql('access_denied');
+        pm.expect(b.status).to.eql(403);
+        pm.expect(b.message).to.be.a('string').and.not.empty;
+      });
+    language: text/javascript
+order: 1000

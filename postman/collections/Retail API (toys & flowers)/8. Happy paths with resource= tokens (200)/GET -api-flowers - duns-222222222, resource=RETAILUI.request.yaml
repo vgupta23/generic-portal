@@ -1,0 +1,16 @@
+$kind: http-request
+name: "GET /api/flowers | duns-222222222, resource=RETAILUI"
+description: "One scope for DUNS 222222222, resource=RETAILUI -> flowers readable"
+url: "{{baseUrl}}/api/flowers"
+method: GET
+headers:
+  Authorization: "Bearer {{access_a_222_RETAILUI}}"
+  X-ID-Token: "{{id_a_222_RETAILUI}}"
+  Accept: "application/json"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 200', function () { pm.response.to.have.status(200); });
+      pm.test('Flower catalog of DUNS 222222222', function () { pm.expect(pm.response.json().duns).to.eql('222222222'); });
+    language: text/javascript
+order: 2000

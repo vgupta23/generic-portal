@@ -170,23 +170,81 @@ They need no Keycloak: `TestTokens` mints RS256 JWTs like Keycloak's, and `TestJ
 
 ## Postman
 
-1. Run the three commands in "Build, run, test" (tests optional) so the container and the dev test client exist.
+1. Run the three commands in "Build, run, test" (tests optional), then set up Keycloak once:
+   `./scripts/setup-keycloak-api-test.sh && ./scripts/setup-keycloak-duns-clients.sh`
 2. Get the collection into Postman, either way:
    - **Import** the portable file `postman/export/retail-api.postman_collection.json`, or
    - open the repo as a local workspace: Postman's native folder `postman/collections/Retail API (toys & flowers)/` (and
      `.postman/resources.yaml`) is what the Postman app writes when you link the repo.
-3. Open the collection -> **Run** (Collection Runner) -> **Run Retail API**. Folders run top to bottom:
+3. Open the collection -> **Run** (Collection Runner) -> **Run Retail API**.
+
+### One client per DUNS, one scope per resource
+
+| DUNS | Client id (own secret) | Owns | Scope that requests RETAILUI |
+|---|---|---|---|
+| 111111111 | `retail-duns-111111111` / `retail-duns-111111111-secret` | toys | `111111111:RETAILUI` |
+| 222222222 | `retail-duns-222222222` / `retail-duns-222222222-secret` | flowers | `222222222:RETAILUI` |
+
+```
+POST /realms/demo/protocol/openid-connect/token
+client_id=retail-duns-111111111  client_secret=...  grant_type=password  username=apiuser  password=password
+scope=openid 111111111:RETAILUI
+```
+
+The token then carries `duns=111111111` and `resource_access.duns-111111111.roles=["RETAILUI"]` and nothing else: no other
+role, no other DUNS. A user who lacks the role gets a token without it, and no scope means no roles. (Roles live on a
+separate bearer-only client `duns-<DUNS>` because Keycloak always includes a client's own roles in its tokens.)
+The API grants `<duns>:<role>` authorities from those claims; the toys need RETAILUI of DUNS 111111111, the flowers of 222222222.
+Dev secrets are fixed in `scripts/setup-keycloak-duns-clients.sh`; the clients' ids are accepted as ID-token audiences via
+`RETAIL_SECURITY_ID_AUDIENCES` (defaults in `docker-compose.yml`).
+
+Request names in the collection show which client (DUNS) and scope (resource) each call uses. Folders:
 
 | Folder | What it does |
 |---|---|
-| 0. Get tokens from Keycloak | Password grant for `apiuser`, `toyonly`, `noretail`; stores their access + ID tokens as collection variables |
+| 0. Get tokens | 8 token requests: apiuser/toyonly/noretail against each DUNS client, plus `CRM`-only and no-scope tokens |
 | 1. Health | public endpoint |
-| 2-4. Toys, Flowers, Identity echo | happy paths as `apiuser` (RETAILUI on both DUNS) |
+| 2-3. Toys, Flowers | happy paths with the matching DUNS's token |
+| 4. Identity echo | `/api/me` shows exactly one DUNS and one role per token |
 | 5. Access denied (401) | no token, garbage token, tampered signature, ID token missing/garbage/other user, ID token used as access token |
-| 6. Access denied (403) | `noretail` (no RETAILUI) and `toyonly` (RETAILUI only on the toy DUNS) |
+| 6. Access denied (403) | wrong DUNS for the data, wrong resource scope, no scope, user without the role |
 
-24 requests, 39 assertions. Variables (`baseUrl`, `keycloakUrl`, `realm`, `clientId`, `password`) are editable on the collection.
-Headless: `npx newman run postman/export/retail-api.postman_collection.json`.
+55 requests, 139 assertions (folders 0-6 above plus the `resource=` variant below). Headless (needs `localhost` URLs, so run it on the host): `npx newman run postman/export/retail-api.postman_collection.json`.
+
+### Variant: one scope per DUNS, role chosen by `resource=`
+
+Instead of one scope per (DUNS, role), each DUNS has a single scope `duns-<DUNS>` that maps **all** of that DUNS's roles. The
+role that ends up in the token is picked at request time by the token request's `resource` parameter:
+
+```
+POST /realms/demo/protocol/openid-connect/token
+client_id=retail-duns-111111111  client_secret=...  grant_type=password  username=apiuser  password=password
+scope=openid duns-111111111  resource=RETAILUI
+```
+-> `duns=111111111`, `resource_access.duns-111111111.roles=["RETAILUI"]` (apiuser also holds USA and CRM there; they are removed).
+
+Plain Keycloak cannot do this (no built-in mapper reads a request parameter), so it is a small custom protocol mapper,
+`keycloak-extensions/resource-role-mapper` (Java SPI, provider id `resource-role-filter-mapper`), attached to each `duns-<DUNS>` scope.
+It runs after the standard role mappers and only ever **removes** roles:
+
+| Request | Token roles |
+|---|---|
+| `resource=RETAILUI` | RETAILUI (if the user holds it under that DUNS) |
+| `resource="RETAILUI CRR"` (space or comma separated) | both (Keycloak rejects a repeated `resource` parameter) |
+| no `resource` | none (deny by default) |
+| a role the user lacks, or that does not exist | none (the filter never adds) |
+| refresh_token grant without `resource` | the role(s) of the original request (remembered on the client session) |
+
+`resource` is a plain role name here; it is not validated as the absolute URI that RFC 8707 asks for.
+The other DUNS's scope is not available to a client (`invalid_scope`), so a DUNS client cannot reach another DUNS's roles.
+
+```bash
+./keycloak-extensions/resource-role-mapper/deploy.sh                   # build (Maven in Docker), install the jar, restart Keycloak
+./retail-api/scripts/setup-keycloak-duns-resource-scopes.sh            # scopes, scope mappings, mapper; needs the two setup scripts above
+```
+The jar lives in the Keycloak container's filesystem; re-run `deploy.sh` if the container is recreated. The Keycloak version in
+`keycloak-extensions/resource-role-mapper/pom.xml` must match the server. Postman folders 7-9 exercise it (token matrix, happy paths, denials);
+the API needed no change, it already reads `resource_access.duns-<DUNS>.roles`.
 
 | Test user | `duns_roles` | Toys | Flowers |
 |---|---|---|---|

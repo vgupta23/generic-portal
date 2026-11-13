@@ -1,8 +1,10 @@
 $kind: http-request
+name: "Toys without any token"
+description: "Toys without any token"
 url: "{{baseUrl}}/api/toys"
 method: GET
 headers:
-  Accept: application/json
+  Accept: "application/json"
 scripts:
   - type: afterResponse
     code: |-

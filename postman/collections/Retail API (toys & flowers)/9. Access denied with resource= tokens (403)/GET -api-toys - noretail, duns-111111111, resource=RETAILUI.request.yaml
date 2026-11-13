@@ -1,0 +1,21 @@
+$kind: http-request
+name: "GET /api/toys | noretail, duns-111111111, resource=RETAILUI"
+description: "noretail asks for RETAILUI but does not hold it; the filter only removes, it never adds -> denied"
+url: "{{baseUrl}}/api/toys"
+method: GET
+headers:
+  Authorization: "Bearer {{access_n_111_RETAILUI}}"
+  X-ID-Token: "{{id_n_111_RETAILUI}}"
+  Accept: "application/json"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 403', function () { pm.response.to.have.status(403); });
+      pm.test('Body is a JSON access_denied error', function () {
+        const b = pm.response.json();
+        pm.expect(b.error).to.eql('access_denied');
+        pm.expect(b.status).to.eql(403);
+        pm.expect(b.message).to.be.a('string').and.not.empty;
+      });
+    language: text/javascript
+order: 5000

@@ -1,0 +1,42 @@
+$kind: http-request
+name: "apiuser | client retail-duns-111111111 | no resource scope"
+description: "DUNS 111111111 client, but no resource scope: Keycloak must return no roles."
+url: "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token"
+method: POST
+headers:
+  Content-Type: "application/x-www-form-urlencoded"
+body:
+  type: urlencoded
+  content:
+    client_id: "retail-duns-111111111"
+    client_secret: "{{secret_111111111}}"
+    grant_type: "password"
+    username: "apiuser"
+    password: "{{password}}"
+    scope: "openid"
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('Keycloak issued tokens to retail-duns-111111111 for apiuser', function () {
+        pm.response.to.have.status(200);
+        pm.expect(body.access_token).to.be.a('string');
+        pm.expect(body.id_token).to.be.a('string');
+        pm.collectionVariables.set('access_apiuser_111111111_noscope', body.access_token);
+        pm.collectionVariables.set('id_apiuser_111111111_noscope', body.id_token);
+      });
+      const claims = JSON.parse(atob(body.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+      pm.test('Token is bound to DUNS 111111111: azp=retail-duns-111111111, duns=111111111', function () {
+        pm.expect(claims.azp).to.eql('retail-duns-111111111');
+        pm.expect(claims.duns).to.eql('111111111');
+      });
+      pm.test('No role is in the token (no resource scope requested)', function () {
+        const ra = claims.resource_access;
+        const expected = undefined;
+        if (expected === undefined) { pm.expect(ra === undefined || Object.keys(ra).length === 0).to.be.true; }
+        else { pm.expect(ra).to.eql(expected); }
+        pm.expect(claims.duns_roles).to.be.undefined;
+      });
+      console.log('TOKEN apiuser | client retail-duns-111111111 | no resource scope | roles in token: ' + JSON.stringify(claims.resource_access));
+    language: text/javascript
+order: 8000

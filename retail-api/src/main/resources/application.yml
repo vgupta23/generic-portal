@@ -21,7 +21,7 @@ retail:
     # `aud` that the ACCESS token must contain (Keycloak audience mapper on demo-ui adds retail-ui).
     access-audience: retail-ui
     # `aud` values accepted on the ID token (the OIDC client that obtained it).
-    id-audiences: demo-ui,retail-api-test
+    id-audiences: demo-ui,retail-api-test,retail-duns-111111111,retail-duns-222222222
     # Role that must be present for the DUNS that owns the requested data.
     required-role: RETAILUI
     toy-duns: "111111111"

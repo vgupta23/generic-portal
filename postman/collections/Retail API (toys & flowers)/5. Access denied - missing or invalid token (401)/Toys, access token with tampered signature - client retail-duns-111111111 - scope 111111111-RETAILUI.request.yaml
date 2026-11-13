@@ -1,0 +1,30 @@
+$kind: http-request
+name: "Toys, access token with tampered signature | client retail-duns-111111111 | scope 111111111:RETAILUI"
+description: "Toys, access token with tampered signature | client retail-duns-111111111 | scope 111111111:RETAILUI"
+url: "{{baseUrl}}/api/toys"
+method: GET
+headers:
+  Authorization: "Bearer {{access_apiuser_111111111_RETAILUI}}"
+  X-ID-Token: "{{id_apiuser_111111111_RETAILUI}}"
+  Accept: "application/json"
+scripts:
+  - type: beforeRequest
+    code: |-
+      const parts = pm.collectionVariables.get('access_apiuser_111111111_RETAILUI').split('.');
+      const sig = parts[2];
+      const mid = Math.floor(sig.length / 2);
+      parts[2] = sig.slice(0, mid) + (sig[mid] === 'A' ? 'B' : 'A') + sig.slice(mid + 1);  // still valid base64, wrong signature
+      pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + parts.join('.') });
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 401', function () { pm.response.to.have.status(401); });
+      pm.test('Body is a JSON access_denied error', function () {
+        const b = pm.response.json();
+        pm.expect(b.error).to.eql('access_denied');
+        pm.expect(b.status).to.eql(401);
+        pm.expect(b.message).to.be.a('string').and.not.empty;
+        pm.expect(b.message).to.include("Invalid signature");
+      });
+    language: text/javascript
+order: 7000

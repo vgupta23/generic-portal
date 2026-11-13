@@ -1,17 +1,46 @@
 $kind: collection
 description: |-
-  Run with the Collection Runner (top to bottom). Prerequisites: Keycloak running and configured, ./scripts/setup-keycloak-api-test.sh executed, retail-api container running on http://localhost:8090.
+  Run with the Collection Runner (top to bottom). Prerequisites: Keycloak configured, ./retail-api/scripts/setup-keycloak-api-test.sh then ./retail-api/scripts/setup-keycloak-duns-clients.sh executed, retail-api running on http://localhost:8090.
 
-  The first folder fetches real tokens from Keycloak; the rest call the API with them.
+  Every token request names the DUNS (client_id = retail-duns-<DUNS> plus that client's own client_secret) and the resource (scope = "openid <DUNS>:<ROLE>", e.g. "openid 111111111:RETAILUI"). Keycloak then returns ONLY that role of that DUNS. Request names show the client and scope used; the console shows which roles each token carries.
+
+  | DUNS | Client id | Owns | Scope for RETAILUI |
+  |---|---|---|---|
+  | 111111111 | retail-duns-111111111 | toys | 111111111:RETAILUI |
+  | 222222222 | retail-duns-222222222 | flowers | 222222222:RETAILUI |
+
+  ## Variant: one scope per DUNS, role chosen by `resource=` (folders 7-9)
+
+  The scope `duns-<DUNS>` contains ALL roles of that DUNS. The token request's `resource` parameter says which role(s) to issue, and a custom Keycloak mapper (keycloak-extensions/resource-role-mapper) removes every other role. Prerequisites: `keycloak-extensions/resource-role-mapper/deploy.sh`, then `retail-api/scripts/setup-keycloak-duns-resource-scopes.sh`.
+
+  | DUNS | Client id | Scope | Example request |
+  |---|---|---|---|
+  | 111111111 | retail-duns-111111111 | duns-111111111 | scope=`openid duns-111111111` resource=`RETAILUI` |
+  | 222222222 | retail-duns-222222222 | duns-222222222 | scope=`openid duns-222222222` resource=`RETAILUI CRR` |
+
+  No `resource` means no role. Several roles are space separated (Keycloak rejects a repeated `resource` parameter).
 variables:
   baseUrl: http://localhost:8090
   keycloakUrl: http://localhost:8080
   realm: demo
-  clientId: retail-api-test
   password: password
-  access_apiuser: ""
-  id_apiuser: ""
-  access_toyonly: ""
-  id_toyonly: ""
-  access_noretail: ""
-  id_noretail: ""
+  secret_111111111: retail-duns-111111111-secret
+  secret_222222222: retail-duns-222222222-secret
+  access_apiuser_111111111_RETAILUI: ""
+  id_apiuser_111111111_RETAILUI: ""
+  access_apiuser_222222222_RETAILUI: ""
+  id_apiuser_222222222_RETAILUI: ""
+  access_toyonly_111111111_RETAILUI: ""
+  id_toyonly_111111111_RETAILUI: ""
+  access_toyonly_222222222_RETAILUI: ""
+  id_toyonly_222222222_RETAILUI: ""
+  access_noretail_111111111_RETAILUI: ""
+  id_noretail_111111111_RETAILUI: ""
+  access_noretail_222222222_RETAILUI: ""
+  id_noretail_222222222_RETAILUI: ""
+  access_apiuser_111111111_CRM: ""
+  id_apiuser_111111111_CRM: ""
+  access_apiuser_111111111_noscope: ""
+  id_apiuser_111111111_noscope: ""
+  access_a_111_RETAILUI: ""
+  id_a_111_RETAILUI: ""

@@ -1,0 +1,44 @@
+$kind: http-example
+name: apiuser | client retail-duns-111111111 | scope 111111111:RETAILUI
+request:
+  url: "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token"
+  method: POST
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body:
+    type: urlencoded
+    content:
+      client_id: retail-duns-111111111
+      client_secret: "{{secret_111111111}}"
+      grant_type: password
+      username: apiuser
+      password: "{{password}}"
+      scope: openid 111111111:RETAILUI
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    Cache-Control: no-store
+    Pragma: no-cache
+    content-length: "3427"
+    Content-Type: application/json
+    Referrer-Policy: no-referrer
+    Strict-Transport-Security: max-age=31536000; includeSubDomains
+    X-Content-Type-Options: nosniff
+    X-Frame-Options: SAMEORIGIN
+    X-Robots-Tag: none
+  body:
+    type: json
+    content: |-
+      {
+        "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJ5bGRMU2Rad0FlS1BXZnduWHZlMFpIZXBNS3ZMVnVpaXNwU0dUSU95VXJZIn0.eyJleHAiOjE3OTQ1OTQ2MTMsImlhdCI6MTc5NDU5NDMxMywianRpIjoib25ydHJvOjQ5MmU4MjljLTViOWItZWQ0YS02MGU4LTZiYmZkYjNiYzM1ZSIsImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA4MC9yZWFsbXMvZGVtbyIsImF1ZCI6WyJyZXRhaWwtdWkiLCJkdW5zLTExMTExMTExMSJdLCJzdWIiOiI3ZDRhMzg1YS00NTFmLTQ5MmItYjQ4MS0yMmRiNmYzNWYxYTkiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJyZXRhaWwtZHVucy0xMTExMTExMTEiLCJzaWQiOiI4R28xajl1S2MwYXVISkgzQTRzSy1KdU8iLCJhY3IiOiIxIiwicmVzb3VyY2VfYWNjZXNzIjp7ImR1bnMtMTExMTExMTExIjp7InJvbGVzIjpbIlJFVEFJTFVJIl19fSwic2NvcGUiOiJvcGVuaWQgcHJvZmlsZSAxMTExMTExMTE6UkVUQUlMVUkgZW1haWwiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZW1wbG95ZWVfaWQiOiJULWFwaXVzZXIiLCJuYW1lIjoiYXBpdXNlciBUZXN0IiwiZHVucyI6IjExMTExMTExMSIsInByZWZlcnJlZF91c2VybmFtZSI6ImFwaXVzZXIiLCJnaXZlbl9uYW1lIjoiYXBpdXNlciIsImRlcGFydG1lbnQiOiJRQSIsImZhbWlseV9uYW1lIjoiVGVzdCIsImVtYWlsIjoiYXBpdXNlckBleGFtcGxlLmNvbSJ9.YvBuGIw7iBL8_3PiVeYnHERjSN5ppni3WiDo7Qk59cSkqVGrKpOBSULhrQ_njz8jN-_QNQFJzRVkfNpewbG2ONV_K0dKaWO1I_JcSEt5OTZozA5o6LcX4gOMD9tupRt8mOoY4Fl92wushrVx5K5te429x3GTX3bgFJEMU6iysvgcfAsGCNEgnmfBROyl9SYQR9yl9x5zp493VIQZfGZwYO-LhO1C7Nn01r1Npgk5HRhXzyGfvtziEKV5oz4YYFU1REq0Cliu5iu1AJbU1t_DgoaKWm0kpj_Yoapz8tccjKvKyoa7cWasXNdd181Tw3R53_vFYgKK3QabWb2uIiOQfA",
+        "expires_in": 300,
+        "refresh_expires_in": 1800,
+        "refresh_token": "eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICIzYzg2YTFiZC0zOGIzLTQ3NzktYmEyYi02NTMwMmY0MzE3NTIifQ.eyJleHAiOjE3OTQ1OTYxMTMsImlhdCI6MTc5NDU5NDMxMywianRpIjoiMzEyZjgyMWItMWY4YS0zOThiLWVjNWEtZWEwMjg2MTY4MTFkIiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9kZW1vIiwiYXVkIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9kZW1vIiwic3ViIjoiN2Q0YTM4NWEtNDUxZi00OTJiLWI0ODEtMjJkYjZmMzVmMWE5IiwidHlwIjoiUmVmcmVzaCIsImF6cCI6InJldGFpbC1kdW5zLTExMTExMTExMSIsInNpZCI6IjhHbzFqOXVLYzBhdUhKSDNBNHNLLUp1TyIsInNjb3BlIjoib3BlbmlkIHdlYi1vcmlnaW5zIHByb2ZpbGUgMTExMTExMTExOlJFVEFJTFVJIGJhc2ljIGFjciByb2xlcyBlbWFpbCIsImF1ZF94IjpbInJldGFpbC11aSIsImR1bnMtMTExMTExMTExIl0sInByb3YiOiJkZWZhdWx0In0.y_ZJypzIskL-seNkV8lY4S0FqDWWMGLU1jESbXwIcEiu0lPNgX4wChQL0RJNa0qwTogb3PTeiPSQ8HdwCzXfbg",
+        "token_type": "Bearer",
+        "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJ5bGRMU2Rad0FlS1BXZnduWHZlMFpIZXBNS3ZMVnVpaXNwU0dUSU95VXJZIn0.eyJleHAiOjE3OTQ1OTQ2MTMsImlhdCI6MTc5NDU5NDMxMywianRpIjoiN2M1NTdiMTMtMmViMS05MzdiLTA2NzEtZDkxZWNhMDQ4NzMxIiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9kZW1vIiwiYXVkIjoicmV0YWlsLWR1bnMtMTExMTExMTExIiwic3ViIjoiN2Q0YTM4NWEtNDUxZi00OTJiLWI0ODEtMjJkYjZmMzVmMWE5IiwidHlwIjoiSUQiLCJhenAiOiJyZXRhaWwtZHVucy0xMTExMTExMTEiLCJzaWQiOiI4R28xajl1S2MwYXVISkgzQTRzSy1KdU8iLCJhdF9oYXNoIjoiMVZuTVV3SkpqbWtBYkxGWE9JOG9kdyIsImFjciI6IjEiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZW1wbG95ZWVfaWQiOiJULWFwaXVzZXIiLCJuYW1lIjoiYXBpdXNlciBUZXN0IiwiZHVucyI6IjExMTExMTExMSIsInByZWZlcnJlZF91c2VybmFtZSI6ImFwaXVzZXIiLCJnaXZlbl9uYW1lIjoiYXBpdXNlciIsImRlcGFydG1lbnQiOiJRQSIsImZhbWlseV9uYW1lIjoiVGVzdCIsImVtYWlsIjoiYXBpdXNlckBleGFtcGxlLmNvbSJ9.wP9biQyy76dSrf7RAkWlsELfZiMmd7JFRDO-unCunDFgbLfLhCph-dbPoc-iXN5TAGx0BLDtN9TZRv40oPd7GJIJfqZIHLZXRxswVMvWGYbfBS0_8hROhBIVGyl8Cbwn0xvb2c8Y-m2Y906K6megU6S2I_pXWlLZJcL1jmNJ8LfKNY8bIVo1hhVu3ixX9drUILIwS8_3Mzmv4xSAfjpC-LZw6by_cB6mvWdcaV-HCx8wSMibWesVUHuhoJyyuT978HmkX-XX5LwSuXAj_VNCwv1aOzL--J0NSxs6LcMomBir8JJ-bYED2GE9Xfto-dIx0P1cRosxdj4mwURL97IaAg",
+        "not-before-policy": 0,
+        "session_state": "8Go1j9uKc0auHJH3A4sK-JuO",
+        "scope": "openid profile 111111111:RETAILUI email"
+      }
+order: 1000

@@ -13,7 +13,7 @@ services:
       RETAIL_SECURITY_JWK_SET_URI: http://host.docker.internal:8080/realms/demo/protocol/openid-connect/certs
       RETAIL_SECURITY_ACCESS_AUDIENCE: retail-ui
       # Extend (comma-separated) to accept ID tokens from additional agent clients - see docs/DESIGN.md section 13.
-      RETAIL_SECURITY_ID_AUDIENCES: ${RETAIL_SECURITY_ID_AUDIENCES:-demo-ui,retail-api-test}
+      RETAIL_SECURITY_ID_AUDIENCES: ${RETAIL_SECURITY_ID_AUDIENCES:-demo-ui,retail-api-test,retail-duns-111111111,retail-duns-222222222}
     extra_hosts:
       - "host.docker.internal:host-gateway"   # needed on Linux; Docker Desktop already provides it
     restart: unless-stopped

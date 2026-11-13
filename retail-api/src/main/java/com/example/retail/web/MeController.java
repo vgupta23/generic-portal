@@ -26,8 +26,11 @@ class MeController {
         body.put("subject", access.getSubject());
         body.put("department", access.getClaimAsString("department"));
         body.put("employeeId", access.getClaimAsString("employee_id"));
+        body.put("clientId", access.getClaimAsString("azp"));
+        body.put("duns", access.getClaimAsString("duns"));
+        body.put("scope", access.getClaimAsString("scope"));
         body.put("roles", access.getClaim("roles"));
-        body.put("dunsRoles", DunsRoles.parse(access.getClaim("duns_roles")));
+        body.put("dunsRoles", DunsRoles.fromToken(access));
         body.put("accessTokenAudience", access.getAudience());
         body.put("idTokenAudience", id != null ? id.getAudience() : null);
         body.put("accessTokenExpires", access.getExpiresAt());

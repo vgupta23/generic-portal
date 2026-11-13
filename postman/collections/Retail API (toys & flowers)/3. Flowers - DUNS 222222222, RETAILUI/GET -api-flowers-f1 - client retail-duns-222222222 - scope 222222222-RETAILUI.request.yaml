@@ -1,0 +1,15 @@
+$kind: http-request
+name: "GET /api/flowers/f1 | client retail-duns-222222222 | scope 222222222:RETAILUI"
+description: "client retail-duns-222222222 | scope 222222222:RETAILUI (user apiuser) -> /api/flowers/f1"
+url: "{{baseUrl}}/api/flowers/f1"
+method: GET
+headers:
+  Authorization: "Bearer {{access_apiuser_222222222_RETAILUI}}"
+  X-ID-Token: "{{id_apiuser_222222222_RETAILUI}}"
+  Accept: "application/json"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 200', function () { pm.response.to.have.status(200); });
+    language: text/javascript
+order: 2000

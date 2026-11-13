@@ -1012,6 +1012,17 @@ sequenceDiagram
 | `unauthorized_client` at the token endpoint | confidential client without `client_secret`, or grant not enabled on the client | send the secret / re-run the registration script with the right flag |
 | `slow_down` while polling the device grant | polling faster than `interval` | wait `interval` seconds (it grows after `slow_down`) |
 
+### 13.9a Variant: one scope per DUNS, role selected by the `resource` parameter
+
+Besides one scope per (DUNS, role) (`<DUNS>:<ROLE>`), the realm can offer **one scope per DUNS** (`duns-<DUNS>`) that maps all
+roles of that DUNS. The caller still identifies the DUNS by its client (`retail-duns-<DUNS>`), and names the wanted role in the
+token request: `scope=openid duns-111111111 resource=RETAILUI`. A custom protocol mapper
+(`keycloak-extensions/resource-role-mapper`, a Java SPI jar in Keycloak's `providers/` directory) runs after the standard role
+mapper and removes every role not listed in `resource`, so the token carries exactly the requested role. It never adds roles
+(a role the user lacks stays absent), no `resource` yields no roles, and refresh tokens keep the originally requested role.
+The API is unchanged. Keycloak's script mappers were not used: they are deprecated, disabled by default and need a deployed jar
+anyway. Setup and test matrix: `retail-api/README.md` ("Variant: one scope per DUNS") and Postman folders 7-9.
+
 ### 13.10 Security notes for agents
 
 - Prefer the **device** or **authorization-code + PKCE** grant. The password grant exists here for development, because it needs the
