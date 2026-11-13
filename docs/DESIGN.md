@@ -20,7 +20,7 @@ Multi-application portal with Keycloak OIDC, MFA, DUNS-scoped authorization, and
 10. [Direct-access and bookmark behaviour](#10-direct-access-and-bookmark-behaviour)
 11. [Reference tables](#11-reference-tables)
 12. [Security analysis, limitations, production hardening](#12-security-analysis)
-13. [Retail REST API and external agents](#13-retail-rest-api-and-external-agents) (endpoints, validation, agent onboarding, getting the JWTs, calling the API)
+13. [Retail REST API and external agents](#13-retail-rest-api-and-external-agents) (endpoints, validation, agent onboarding, getting the JWTs, calling the API, per-DUNS clients and the `resource=` flow)
 
 ---
 
@@ -806,9 +806,9 @@ sequenceDiagram
 | 4 | Access token `aud` contains `retail-ui` (the audience mapper puts it there) | 401 |
 | 5 | `X-ID-Token` present | 401 |
 | 6 | ID token signature, `iss`, expiry valid | 401 |
-| 7 | ID token `aud` is one of `RETAIL_SECURITY_ID_AUDIENCES` (default `demo-ui, retail-api-test`) | 401 |
+| 7 | ID token `aud` is one of `RETAIL_SECURITY_ID_AUDIENCES` (compose default `demo-ui, retail-api-test, retail-duns-111111111, retail-duns-222222222`) | 401 |
 | 8 | ID token `sub` = access token `sub` | 401 |
-| 9 | Access token `duns_roles` grants `RETAILUI` for the DUNS that owns the endpoint (toys 111111111, flowers 222222222; `/api/me` any DUNS) | 403 |
+| 9 | The token grants `RETAILUI` for the DUNS that owns the endpoint (toys 111111111, flowers 222222222; `/api/me` any DUNS). Roles come from `duns_roles` (portal and agent tokens) and, for per-DUNS tokens (13.9a), from `resource_access.duns-<DUNS>.roles` where `<DUNS>` is the token's own `duns` claim, so such a token can never grant roles of another DUNS | 403 |
 | 10 | Token verification cannot run because Keycloak's signing keys are unreachable | **503** `service_unavailable` + `Retry-After: 5` (not the caller's fault; the API starts without Keycloak and recovers on its own) |
 
 Authentication and authorization failures use one body, so callers handle a single shape:
@@ -850,7 +850,7 @@ sequenceDiagram
 
 | # | Who | Action | Command / where | What breaks if skipped |
 |---|---|---|---|---|
-| 1 | Admin | Keycloak running with the `demo` realm, claim mappers, `duns_roles` attribute | `./scripts/start-keycloak.sh && ./scripts/setup-keycloak.sh` | no tokens at all |
+| 1 | Admin | Keycloak running with the `demo` realm, claim mappers, `duns_roles` attribute. Add `./scripts/setup-keycloak-api.sh` for the dev test client/users and the per-DUNS clients, scopes and mapper of 13.9a | `./scripts/start-keycloak.sh && ./scripts/setup-keycloak.sh` | no tokens at all |
 | 2 | Admin | Register the agent as an OIDC client. Choose the grant it will use (see 13.5). The script adds the same mappers as the portal (`duns_roles`, `roles`, `department`, `employee_id`) and the **`retail-ui` audience on the access token** | `cd retail-api && ./scripts/register-agent-client.sh my-agent --device` (add `--confidential` for a client secret, `--password-grant` for dev/test) | access token lacks `duns_roles` / `aud retail-ui` -> 401 or 403 |
 | 3 | Admin | Make sure the user the agent acts for has `RETAILUI` for the DUNS they need, in the `duns_roles` attribute, e.g. `111111111:USA,RETAILUI` | Admin console -> Users -> *user* -> Attributes -> **DUNS roles** | 403 `role RETAILUI is required for DUNS ...` |
 | 4 | Operator | **Allow-list the client's ID-token audience** in the API. The ID token's `aud` is the client id, and the API accepts only listed clients | create `retail-api/.env` containing `RETAIL_SECURITY_ID_AUDIENCES=demo-ui,retail-api-test,my-agent`, then `docker compose up -d` (keep existing entries; use `.env`, because an inline variable is lost on the next `up`) | 401 `Token audience [my-agent] is not accepted by this API` |
@@ -1012,16 +1012,90 @@ sequenceDiagram
 | `unauthorized_client` at the token endpoint | confidential client without `client_secret`, or grant not enabled on the client | send the secret / re-run the registration script with the right flag |
 | `slow_down` while polling the device grant | polling faster than `interval` | wait `interval` seconds (it grows after `slow_down`) |
 
-### 13.9a Variant: one scope per DUNS, role selected by the `resource` parameter
+### 13.9a Per-DUNS clients and the `resource=` flow
 
-Besides one scope per (DUNS, role) (`<DUNS>:<ROLE>`), the realm can offer **one scope per DUNS** (`duns-<DUNS>`) that maps all
-roles of that DUNS. The caller still identifies the DUNS by its client (`retail-duns-<DUNS>`), and names the wanted role in the
-token request: `scope=openid duns-111111111 resource=RETAILUI`. A custom protocol mapper
-(`keycloak-extensions/resource-role-mapper`, a Java SPI jar in Keycloak's `providers/` directory) runs after the standard role
-mapper and removes every role not listed in `resource`, so the token carries exactly the requested role. It never adds roles
-(a role the user lacks stays absent), no `resource` yields no roles, and refresh tokens keep the originally requested role.
-The API is unchanged. Keycloak's script mappers were not used: they are deprecated, disabled by default and need a deployed jar
-anyway. Setup and test matrix: `retail-api/README.md` ("Variant: one scope per DUNS") and Postman folders 7-9.
+The agent flows above identify a **user** and read all of that user's DUNS roles from `duns_roles`. This variant is for machine
+callers that must act for **one DUNS and one role at a time**: the caller names the DUNS by *which client it authenticates as*
+and the role by a **`resource`** request parameter, and the token then contains exactly that role of that DUNS and nothing else.
+The API needs no change: it reads `resource_access.duns-<DUNS>.roles` (13.3 check 9).
+
+#### Keycloak objects (all created by `./scripts/setup-keycloak-api.sh`)
+
+| Object | Example | Role in the design |
+|---|---|---|
+| Caller client, one per DUNS | `retail-duns-111111111` (confidential, secret `retail-duns-111111111-secret`, password grant, **full scope off**) | Identifies the DUNS. Also adds the claims `duns=<DUNS>`, `department`, `employee_id` and the `retail-ui` audience |
+| Resource client, one per DUNS (bearer-only) | `duns-111111111` | Holds that DUNS's roles (`USA`, `RETAILUI`, `CRM`, ...) as client roles. Roles sit on a separate client because Keycloak always puts a client's *own* roles into its tokens, whereas another client's roles appear only when a scope maps them |
+| Client scope `<DUNS>:<ROLE>` (variant A) | `111111111:RETAILUI` | Maps exactly one role; request it to receive that role |
+| Client scope `duns-<DUNS>` (variant B) | `duns-111111111` | Maps **all** roles of the DUNS and carries the mapper `resource-role-filter`; optional scope of `retail-duns-<DUNS>` only |
+| Protocol mapper SPI `resource-role-filter-mapper` | `keycloak-extensions/resource-role-mapper` | Reads the `resource` form parameter and removes every other role |
+| Grants | `apiuser` holds `RETAILUI`, `CRM`, ... under both DUNS clients | What the user may ever receive |
+
+#### Token request and result
+
+```
+POST /realms/demo/protocol/openid-connect/token
+client_id=retail-duns-111111111  client_secret=...  grant_type=password  username=apiuser  password=password
+scope=openid duns-111111111      resource=RETAILUI
+```
+
+```json
+{ "azp": "retail-duns-111111111", "duns": "111111111", "aud": ["retail-ui", "duns-111111111"],
+  "resource_access": { "duns-111111111": { "roles": ["RETAILUI"] } }, "scope": "openid profile duns-111111111 email" }
+```
+
+`apiuser` also holds `USA` and `CRM` under that DUNS; the mapper removed them. `python3 jwtdecode.py <token>` prints these claims.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AG as Caller (Postman / agent)
+    participant KC as Keycloak token endpoint
+    participant M as Standard role mapper
+    participant F as resource-role-filter mapper
+    participant API as retail-api
+
+    AG->>KC: client_id=retail-duns-111111111 + secret, scope="openid duns-111111111", resource=RETAILUI
+    KC->>KC: client authenticated; scope duns-111111111 is an optional scope of this client (else invalid_scope)
+    KC->>M: client roles of duns-111111111 that the user holds AND the scope maps: USA, RETAILUI, CRM
+    M-->>KC: resource_access.duns-111111111.roles = [USA, RETAILUI, CRM]
+    KC->>F: runs after the standard mappers (priority MAX)
+    F->>F: read form parameter "resource" -> {RETAILUI}; drop all other roles of clients named duns-*
+    F-->>KC: roles = [RETAILUI]
+    KC-->>AG: access_token + id_token (aud retail-duns-111111111)
+    AG->>API: GET /api/toys  Bearer + X-ID-Token
+    API->>API: duns claim 111111111 -> authority 111111111:RETAILUI
+    API-->>AG: 200 Toy Shop catalog
+```
+
+#### Behaviour of the filter
+
+| Token request | Roles in the token |
+|---|---|
+| `resource=RETAILUI` | `RETAILUI`, if the user holds it under that DUNS |
+| `resource="RETAILUI CRR"` (space or comma separated) | both (Keycloak rejects a repeated `resource` parameter) |
+| no `resource` | none (deny by default) |
+| a role the user lacks, or that does not exist | none: the filter only ever **removes** |
+| `refresh_token` grant without `resource` | the role(s) of the original request (remembered in a client-session note) |
+| scope of the other DUNS (`duns-222222222` on client `retail-duns-111111111`) | `invalid_scope`: a DUNS client cannot reach another DUNS's roles |
+
+Only roles of clients whose id starts with the configured prefix (`duns-`) are filtered, so other role claims are untouched.
+
+#### How the API treats such a token
+
+`DunsRoles.fromToken` merges `duns_roles` (if present) with `resource_access.duns-<duns>.roles`, where `<duns>` is the token's
+own `duns` claim, into authorities `<DUNS>:<ROLE>`. A token with no `RETAILUI` for the endpoint's DUNS gets 403, exactly as for
+portal tokens. The ID token's audience is the caller client, which must be allow-listed (13.3 check 7; defaults cover both DUNS clients).
+
+#### Operating notes and limits
+
+- **Install:** `keycloak-extensions/resource-role-mapper/deploy.sh` builds the jar with Maven in Docker, copies it to
+  `/opt/keycloak/providers` and restarts Keycloak. `setup-keycloak-api.sh` calls it when the provider is missing. The jar lives in the
+  container filesystem, so a recreated container needs it again (re-run the script).
+- **Version coupling:** `keycloak.version` in the mapper's `pom.xml` must match the Keycloak image (26.8.1).
+- **Why an SPI:** no built-in mapper reads a request parameter, and Keycloak's script mappers are deprecated, disabled by default and need a deployed jar anyway.
+- **`resource` is not RFC 8707:** here it is a plain role name, not an absolute resource URI, and Keycloak does not validate it.
+- **Dev only:** the callers use the password grant with fixed secrets and MFA-less users; for real agents combine per-DUNS clients with the device or code flows of 13.5.
+- **Tests:** Postman folders 0-6 (variant A) and 7-9 (variant B) cover the token matrix, happy paths and the 401/403 denials; the Maven suite covers `DunsRoles` and per-DUNS tokens (`DunsRolesTest`, `PerDunsTokenTest`).
 
 ### 13.10 Security notes for agents
 
