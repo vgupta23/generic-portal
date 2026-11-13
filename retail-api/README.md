@@ -172,8 +172,8 @@ They need no Keycloak: `TestTokens` mints RS256 JWTs like Keycloak's, and `TestJ
 
 1. Run the three commands in "Build, run, test" (tests optional) so the container and the dev test client exist.
 2. Get the collection into Postman, either way:
-   - **Import** the portable file `retail-api/postman/export/retail-api.postman_collection.json`, or
-   - open the repo as a local workspace: Postman's native folder `retail-api/postman/Retail API (toys & flowers)/` (and
+   - **Import** the portable file `postman/export/retail-api.postman_collection.json`, or
+   - open the repo as a local workspace: Postman's native folder `postman/collections/Retail API (toys & flowers)/` (and
      `.postman/resources.yaml`) is what the Postman app writes when you link the repo.
 3. Open the collection -> **Run** (Collection Runner) -> **Run Retail API**. Folders run top to bottom:
 
@@ -186,7 +186,7 @@ They need no Keycloak: `TestTokens` mints RS256 JWTs like Keycloak's, and `TestJ
 | 6. Access denied (403) | `noretail` (no RETAILUI) and `toyonly` (RETAILUI only on the toy DUNS) |
 
 24 requests, 39 assertions. Variables (`baseUrl`, `keycloakUrl`, `realm`, `clientId`, `password`) are editable on the collection.
-Headless: `npx newman run retail-api/postman/export/retail-api.postman_collection.json`.
+Headless: `npx newman run postman/export/retail-api.postman_collection.json`.
 
 | Test user | `duns_roles` | Toys | Flowers |
 |---|---|---|---|
@@ -212,3 +212,5 @@ Tokens last 5 minutes.
   demo realm and remove it afterwards (`--remove`).
 - Plain HTTP, no rate limiting, no CORS; data is in memory.
 - Revocation is not checked per request (no `userinfo` call): a logged-out user's still-valid token works until it expires (5 min).
+
+> The top-level `postman/` folder is the primary home for Postman collections, environments and exports. Build or export new collections there, not under `retail-api/`.

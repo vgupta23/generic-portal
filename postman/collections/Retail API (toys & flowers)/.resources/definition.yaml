@@ -9,3 +9,9 @@ variables:
   realm: demo
   clientId: retail-api-test
   password: password
+  access_apiuser: ""
+  id_apiuser: ""
+  access_toyonly: ""
+  id_toyonly: ""
+  access_noretail: ""
+  id_noretail: ""
